@@ -1,7 +1,9 @@
 import numpy as np
 import tensorflow as tf
 import h5py
-import pylab as pl
+#import pylab as pl
+import matplotlib.pyplot as plt
+
 tf.logging.set_verbosity(tf.logging.INFO)
 
 def cnn(features,labels,mode):
@@ -102,13 +104,13 @@ def cnn(features,labels,mode):
     loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=output_reshape)
 
     if mode == tf.estimator.ModeKeys.TRAIN:
-        print 'Mode is train.'
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate=1e-4)
+        print('Mode is train.')
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.1)
         train_op = optimizer.minimize(loss=loss,global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec(mode=mode,loss=loss,train_op=train_op)
 
     if mode == tf.estimator.ModeKeys.PREDICT:
-        print 'Mode is predict.'
+        print('Mode is predict.')
         return tf.estimator.EstimatorSpec(mode=mode,predictions=predictions)
 
 
@@ -132,36 +134,36 @@ def main(args):
     eval_labels = np.reshape(eval_labels, (1000-trainlen, 1024*60))
 
     # create Estimator
-    rfiCNN = tf.estimator.Estimator(model_fn=cnn,model_dir='./')
+    rfiCNN = tf.estimator.Estimator(model_fn=cnn,model_dir='./checkpoints')
 
+    # define functions
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x":train_data},
         y=train_labels,
-        batch_size=10,
-        num_epochs=None,
+        batch_size=3,
+        num_epochs=10,
         shuffle=True
     )
-
-    rfiCNN.train(input_fn=train_input_fn, steps=2)
-
     eval_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x":eval_data},
         y=eval_labels,
-        num_epochs=1,
+        num_epochs=3,
         shuffle=False)
-
     test_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x":train_data[1,:]},
         shuffle=False
     )
+    
+    rfiCNN.train(input_fn=train_input_fn, steps=1000)
     eval_results = rfiCNN.evaluate(input_fn=eval_input_fn)
     print(eval_results)
-
-#    rfiPredict = rfiCNN.predict(input_fn=test_input_fn)
-#    for i,predicts in enumerate(rfiPredict):
-#        print np.shape(i),np.shape(predicts['probabilities'])
-#        pl.imshow(predicts['classes'].reshape(-1,1024),aspect='auto')
-#        pl.show()
-
+    rfiPredict = rfiCNN.predict(input_fn=test_input_fn)
+    """
+    for i,predicts in enumerate(rfiPredict):
+        #print np.shape(i),np.shape(predicts['probabilities'])
+        if i<5:
+            plt.imshow(predicts['classes'].reshape(-1,1024),aspect='auto',cmap='binary')
+            plt.show()
+    """
 if __name__ == "__main__":
     tf.app.run()
