@@ -1,6 +1,7 @@
 import numpy as np
 import tensorflow as tf
 import h5py
+import pylab as pl
 tf.logging.set_verbosity(tf.logging.INFO)
 
 def cnn(features,labels,mode):
@@ -11,6 +12,7 @@ def cnn(features,labels,mode):
     labels: RFI flag array
     mode: used by tensorflow to distinguish training and testing
     """
+
     # 4D tensor: batch size, height (ntimes), width (nfreq), channels (1)
     input_layer = tf.reshape(features["x"],[-1,60,1024,1])
 
@@ -91,31 +93,46 @@ def cnn(features,labels,mode):
     # out: [-1,60*1024]
     output = tf.layers.dense(inputs=dropout2, units=1024*60*2)
     output_reshape = tf.reshape(output, [-1,1024*60,2])
-    probabilities = tf.nn.softmax(output_reshape,name="softmax_tensor")
 
-    #if mode == tf.estimator.ModeKeys.PREDICT:
-    #    return tf.estimator.EstimatorSpec(mode=mode,predictions=)
+    predictions = {
+        "classes": tf.argmax(input=output_reshape, axis=2),
+        "probabilities": tf.nn.softmax(output_reshape,name="softmax_tensor")
+    }
+
     loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=output_reshape)
 
     if mode == tf.estimator.ModeKeys.TRAIN:
+        print 'Mode is train.'
         optimizer = tf.train.GradientDescentOptimizer(learning_rate=1e-4)
         train_op = optimizer.minimize(loss=loss,global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec(mode=mode,loss=loss,train_op=train_op)
 
+    if mode == tf.estimator.ModeKeys.PREDICT:
+        print 'Mode is predict.'
+        return tf.estimator.EstimatorSpec(mode=mode,predictions=predictions)
+
+
+    eval_metric_ops = {
+        "accuracy": tf.metrics.accuracy(labels=labels,predictions=predictions['classes'])        
+}
+    return tf.estimator.EstimatorSpec(mode=mode,loss=loss,eval_metric_ops=eval_metric_ops)
+
 def main(args):
+    trainlen=666
     # load data
     f = h5py.File('SimVisRFI.h5', 'r')
-    train_data = np.abs(np.asarray(f['data']))
+    train_data = np.asarray(f['data'])[:trainlen,:,:]
+    train_data = np.abs(train_data)
     train_data = np.asarray(train_data, dtype=np.float32)
-    train_labels = np.reshape(np.asarray(f['flag']), (1000, 1024*60))
+    train_labels = np.reshape(np.asarray(f['flag'])[:trainlen,:,:], (trainlen, 1024*60))
     train_labels = np.asarray(train_labels, dtype=np.int32)
-    print(train_labels.dtype)
-    #import IPython;IPython.embed()
-    # test_data = #np.array
-    # separate into train and test
+    eval_data = np.abs(np.asarray(f['data']))[trainlen:,:,:]
+    eval_data = np.asarray(eval_data,dtype=np.float32)
+    eval_labels = np.asarray(f['flag'],dtype=np.int32)[trainlen:,:,:]
+    eval_labels = np.reshape(eval_labels, (1000-trainlen, 1024*60))
 
     # create Estimator
-    rfiCNN = tf.estimator.Estimator(model_fn=cnn,model_dir='/tmp/blah')
+    rfiCNN = tf.estimator.Estimator(model_fn=cnn,model_dir='./')
 
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x":train_data},
@@ -124,7 +141,27 @@ def main(args):
         num_epochs=None,
         shuffle=True
     )
-    rfiCNN.train(input_fn=train_input_fn, steps=10)
+
+    rfiCNN.train(input_fn=train_input_fn, steps=2)
+
+    eval_input_fn = tf.estimator.inputs.numpy_input_fn(
+        x={"x":eval_data},
+        y=eval_labels,
+        num_epochs=1,
+        shuffle=False)
+
+    test_input_fn = tf.estimator.inputs.numpy_input_fn(
+        x={"x":train_data[1,:]},
+        shuffle=False
+    )
+    eval_results = rfiCNN.evaluate(input_fn=eval_input_fn)
+    print(eval_results)
+
+#    rfiPredict = rfiCNN.predict(input_fn=test_input_fn)
+#    for i,predicts in enumerate(rfiPredict):
+#        print np.shape(i),np.shape(predicts['probabilities'])
+#        pl.imshow(predicts['classes'].reshape(-1,1024),aspect='auto')
+#        pl.show()
 
 if __name__ == "__main__":
     tf.app.run()
