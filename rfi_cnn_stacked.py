@@ -4,7 +4,7 @@ import h5py
 import pylab as pl
 tf.logging.set_verbosity(tf.logging.INFO)
 
-def cnn(features,labels,mode):
+def cnn(features,labels,mode,activation=tf.nn.relu):
     """
     Model for CNN
 
@@ -27,19 +27,19 @@ def cnn(features,labels,mode):
                              filters=16,
                              kernel_size=[ks1,ks1],
                              padding="same",
-                             activation=tf.nn.relu)
+                             activation=activation)
 
     conv1b = tf.layers.conv2d(inputs=conv1a,
                              filters=16,
                              kernel_size=[ks1,ks1],
                              padding="same",
-                             activation=tf.nn.relu)
+                             activation=activation)
 
     conv1c = tf.layers.conv2d(inputs=conv1b,
                              filters=16,
                              kernel_size=[ks1,ks1],
                              padding="same",
-                             activation=tf.nn.relu)
+                             activation=activation)
 
     # Pool layer 1 (max pooling), 2x2 filter with stride of 2
     # in: [-1,60,1024,16]
@@ -56,19 +56,19 @@ def cnn(features,labels,mode):
                              filters=32,
                              kernel_size=[ks2,ks2],
                              padding="same",
-                             activation=tf.nn.relu)
+                             activation=activation)
 
     conv2b = tf.layers.conv2d(inputs=conv2a,
                              filters=32,
                              kernel_size=[ks2,ks2],
                              padding="same",
-                             activation=tf.nn.relu)
+                             activation=activation)
 
     conv2c = tf.layers.conv2d(inputs=conv2b,
                              filters=32,
                              kernel_size=[ks2,ks2],
                              padding="same",
-                             activation=tf.nn.relu)
+                             activation=activation)
     # Pool layer 2 (max pooling), 2x2 filter with stride of 2
     # in: [-1,30,512,32]
     # out: [-1,15,256,32]
@@ -83,19 +83,19 @@ def cnn(features,labels,mode):
                              filters=64,
                              kernel_size=[ks3,ks3],
                              padding="same",
-                             activation=tf.nn.relu)
+                             activation=activation)
 
     conv3b = tf.layers.conv2d(inputs=conv3a,
                              filters=64,
                              kernel_size=[ks3,ks3],
                              padding="same",
-                             activation=tf.nn.relu)
+                             activation=activation)
 
     conv3c = tf.layers.conv2d(inputs=conv3b,
                              filters=64,
                              kernel_size=[ks3,ks3],
                              padding="same",
-                             activation=tf.nn.relu)
+                             activation=activation)
     # Pool layer 3
     # in: [-1,15,256,64]
     # out: [-1,5,85,64] (???!!!)
@@ -110,19 +110,19 @@ def cnn(features,labels,mode):
                              filters=16,
                              kernel_size=[ks4,ks4],
                              padding="same",
-                             activation=tf.nn.relu)
+                             activation=activation)
 
     conv4b = tf.layers.conv2d(inputs=conv4a,
                              filters=16,
                              kernel_size=[ks4,ks4],
                              padding="same",
-                             activation=tf.nn.relu)
+                             activation=activation)
 
     conv4c = tf.layers.conv2d(inputs=conv4b,
                              filters=16,
                              kernel_size=[ks4,ks4],
                              padding="same",
-                             activation=tf.nn.relu)
+                             activation=activation)
     # Flatten
     # in: [-1,5,85,16] XXX
     # out: [-1,5*85*16=6800]
@@ -131,12 +131,12 @@ def cnn(features,labels,mode):
     # Dense layer 1
     # in: [-1,6800]
     # out: [-1,2048]
-    dense1 = tf.layers.dense(inputs=flatten, units=2048, activation=tf.nn.relu)
+    dense1 = tf.layers.dense(inputs=flatten, units=2048, activation=activation)
     dropout1 = tf.layers.dropout(inputs=dense1,rate=0.5,training=mode==tf.estimator.ModeKeys.TRAIN)
 
     # in: [-1,2048]
     # out: [-1,1024]
-    dense2 = tf.layers.dense(inputs=dropout1, units=1024, activation=tf.nn.relu)
+    dense2 = tf.layers.dense(inputs=dropout1, units=1024, activation=activation)
     dropout2 = tf.layers.dropout(inputs=dense2,rate=0.5,training=mode==tf.estimator.ModeKeys.TRAIN)
 
     # in: [-1,1024]
