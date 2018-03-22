@@ -3,8 +3,17 @@ import tensorflow as tf
 import h5py
 import pylab as pl
 tf.logging.set_verbosity(tf.logging.INFO)
+from pyuvdata import UVData
 
-def cnn(features,labels,mode,activation=tf.nn.relu):
+def import_test_data(filename,bl_tup=(9,89),rescale=1.0):
+    uvd = UVData()
+    uvd.read_miriad(filename)
+    a1,a2 = bl_tup
+    data = uvd.get_data(a1,a2)
+    data*=rescale
+    return data
+
+def cnn(features,labels,mode):
     """
     Model for CNN
 
@@ -12,7 +21,8 @@ def cnn(features,labels,mode,activation=tf.nn.relu):
     labels: RFI flag array
     mode: used by tensorflow to distinguish training and testing
     """ 
-            # kernel size
+    activation = tf.nn.relu
+    # kernel size
     ks1 = 7 # 1
     ks2 = 5 # 2
     ks3 = 3 # 3
@@ -190,7 +200,10 @@ def main(args):
     eval_data[np.isinf(eval_data)] = 0.
     eval_labels = np.asarray(f['flag'],dtype=np.int32)[trainlen:,:,:]
     eval_labels = np.reshape(eval_labels, (1000-trainlen, 1024*60))
-
+    
+    real_data = import_test_data('zen.2457555.40356.xx.HH.uvcT')
+    real_data = np.asarray(normscale(np.abs(real_data)), dtype=np.float32)
+    
     # create Estimator
     rfiCNN = tf.estimator.Estimator(model_fn=cnn,model_dir='./checkpoint/')
 
@@ -211,7 +224,7 @@ def main(args):
         shuffle=False)
 
     test_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x":train_data[1,:]},
+        x={"x":real_data},
         shuffle=False
     )
     eval_results = rfiCNN.evaluate(input_fn=eval_input_fn)
