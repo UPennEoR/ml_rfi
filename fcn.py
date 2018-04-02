@@ -8,7 +8,6 @@ from pyuvdata import UVData
 from hera_qm import xrfi
 tf.logging.set_verbosity(tf.logging.INFO)
 
-### This code needs refactoring
 def import_test_data(filename,bl_tup=(9,89),rescale=1.0):
     uvd = UVData()
     uvd.read_miriad(filename)
@@ -16,6 +15,75 @@ def import_test_data(filename,bl_tup=(9,89),rescale=1.0):
     data = np.nan_to_num(np.copy(uvd.get_data(a1,a2)))
     data*=rescale
     return data
+
+def stacked_layer(input_layer,num_filter_layers,kt,kf,activation,stride,pool,bnorm=True):
+    """
+    Creates a 3x stacked layer of convolutional layers ###
+    """
+    conva = tf.layers.conv2d(inputs=input_layer,
+                             filters=num_filter_layers,
+                             kernel_size=[kt,kf],
+                             padding="same",
+                             activation=activation)
+
+    convb = tf.layers.conv2d(inputs=conva,
+                             filters=num_filter_layers,
+                             kernel_size=[kt,kf],
+                             padding="same",
+                             activation=activation)
+
+    convc = tf.layers.conv2d(inputs=convb,
+                             filters=num_filter_layers,
+                             kernel_size=[kt,kf],
+                             padding="same",
+                             activation=activation)
+    if bnorm:
+    	bnorm_conv = tf.contrib.layers.batch_norm(convc,scale=True)
+    else:
+    	bnorm_conv = convc
+    pool = tf.layers.max_pooling2d(inputs=bnorm_conv,
+                                    pool_size=pool,
+                                    strides=stride)
+    return pool
+
+def upsample(input_layer,out_size):
+    """
+    Creates an upsampling layer which passes an input layer through two fully connected 
+    layers and then into a convolutional layer that expands the filter dimension for
+    reshaping into an upsampled output
+    """
+    sh = input_layer.get_shape().as_list()
+    print sh,out_size
+    f_layers = (out_size[0]*out_size[1]*out_size[2])/(sh[2]*sh[1])
+    layer_reshape = tf.reshape(input_layer, [-1,sh[1]*sh[2]*sh[3]])
+    fc_layer1 = tf.contrib.layers.fully_connected(layer_reshape,num_outputs = sh[1]*sh[2]*2)
+    fc_layer2 = tf.contrib.layers.fully_connected(fc_layer1,num_outputs = sh[1]*sh[2])
+    fc_layer_reshape = tf.reshape(fc_layer2, [-1,sh[1],sh[2],1])
+    upsamp = tf.layers.conv2d(inputs=fc_layer_reshape,
+                             filters=f_layers,
+                             kernel_size=[2,2],
+                             padding="same",
+                             activation=tf.nn.elu)    
+    upsamp_reshape = tf.reshape(upsamp, [-1,out_size[0],out_size[1],out_size[2]])
+    return tf.contrib.layers.batch_norm(upsamp_reshape,scale=True)
+
+def dense(input_layer,out_size):
+    """
+    Combines 4 fully connected layers for a dense output after the conv. stacked
+    and upsampling layers
+    Each fully connected layer outputs at the following rate:
+    1: 2 x (input freq size)
+    2: 4 x '               '
+    3: 8 x '               '
+    """
+    sh = input_layer.get_shape().as_list()
+    input_layer_reshape = tf.reshape(input_layer, [-1,sh[1]*sh[2]*sh[3]])
+    fc1 = tf.contrib.layers.fully_connected(input_layer,num_outputs=sh[2]*2)
+    fc2 = tf.contrib.layers.fully_connected(fc1,num_outputs=sh[2]*4)
+    fc3 = tf.contrib.layers.fully_connected(fc2,num_outputs=sh[2]*8)
+    fc4 = tf.contrib.layers.fully_connected(fc3,num_outputs=out_size[0]*out_size[1]*out_size[2])
+    fc4_reshape = tf.reshape(fc4, [-1,out_size[0],out_size[1],out_size[2]])
+    return fc4_reshape
 
 def cnn(features,labels,mode):
     """
@@ -26,171 +94,37 @@ def cnn(features,labels,mode):
     mode: used by tensorflow to distinguish training and testing
     """ 
 
-    activation=tf.nn.elu
-            # kernel size
-    kt = 7 # success of finding RFI in real data seems to strongly depend on these 
-    kf = 7 # 7,7 seems like the ideal spot so far
-    ks1 = 10 # 1
-    ks2 = 10 # 2
-    ks3 = 10 # 3
-    ks4 = 10 # 4
+    activation=tf.nn.elu # exponential linear unit
+    # kernel size
+    kt = 5 # success of finding RFI in real data seems to strongly depend on these 
+    kf = 5 # 7,7 seems like the ideal spot so far
+
     # 4D tensor: batch size, height (ntimes), width (nfreq), channels (1)
     input_layer = tf.reshape(features["x"],[-1,60,1024,2])
 
-    chan_conv = tf.layers.conv2d(inputs=input_layer,filters=30,kernel_size=[kt,kf],padding="same",activation=activation)
-    chan_conv = tf.contrib.layers.batch_norm(chan_conv,scale=True)
-    chan_pool = tf.layers.max_pooling2d(inputs=chan_conv,pool_size=[1,2],strides=2)
-    print np.shape(chan_pool)
-    # Conv. layer 1
-    # in: [-1,60,1024,30]
-    # out: [-1,60,1024,16]
-    conv1a = tf.layers.conv2d(inputs=chan_pool,
-                             filters=16,
-                             kernel_size=[kt,kf],
-                             padding="same",
-                             activation=activation)
+    # 3x stacked layers similar to VGG
+    #in: 60,1024,2
+    slayer1 = stacked_layer(input_layer,64,kt,kf,activation,[2,2],[2,2])
+    #1: 30,512,64
+    slayer2 = stacked_layer(slayer1,128,kt*2,kf*2,activation,[2,2],[2,2],bnorm=False)
+    #2: 15,256,128
+    slayer3 = stacked_layer(slayer2,256,kt*3,kf*3,activation,[3,4],[2,2]) 
+    #3: 5,64,256
+    slayer4 = stacked_layer(slayer3,512,kt*4,kf*4,activation,[1,4],[1,2],bnorm=False)
+    #4: 5,16,512
 
-    conv1b = tf.layers.conv2d(inputs=conv1a,
-                             filters=16,
-                             kernel_size=[kt,kf],
-                             padding="same",
-                             activation=activation)
-
-    conv1c = tf.layers.conv2d(inputs=conv1b,
-                             filters=16,
-                             kernel_size=[kt,kf],
-                             padding="same",
-                             activation=activation)
-    conv1c = tf.contrib.layers.batch_norm(conv1c,scale=True)
-    # Pool layer 1 (max pooling), 2x2 filter with stride of 2
-    # in: [-1,60,1024,16]
-    # out: [-1,30,512,16]
-    pool1 = tf.layers.max_pooling2d(inputs=conv1c,
-                                    pool_size=[2,2],
-                                    strides=2)
-    print np.shape(pool1)
-    # Conv. layer 2
-    # in: [-1,30,512,16]
-    # out: [-1,30,512,32]
-
-    conv2a = tf.layers.conv2d(inputs=pool1,
-                             filters=32,
-                             kernel_size=[kt+2,kf+2],
-                             padding="same",
-                             activation=activation)
-
-    conv2b = tf.layers.conv2d(inputs=conv2a,
-                             filters=32,
-                             kernel_size=[kt+2,kf+2],
-                             padding="same",
-                             activation=activation)
-
-    conv2c = tf.layers.conv2d(inputs=conv2b,
-                             filters=32,
-                             kernel_size=[kt+2,kf+2],
-                             padding="same",
-                             activation=activation)
-
-    conv2c = tf.contrib.layers.batch_norm(conv2c,scale=True)
-    # Pool layer 2 (max pooling), 2x2 filter with stride of 2
-    # in: [-1,30,512,32]
-    # out: [-1,15,256,32]
-    pool2 = tf.layers.max_pooling2d(inputs=conv2c,
-                                    pool_size=[2,2],
-                                    strides=2)
-
-    # Conv. layer 3
-    # in: [-1,15,256,32]
-    # out: [-1,15,256,64]
-    conv3a = tf.layers.conv2d(inputs=pool2,
-                             filters=128,
-                             kernel_size=[kt+4,kf+4],
-                             padding="same",
-                             activation=activation)
-
-    conv3b = tf.layers.conv2d(inputs=conv3a,
-                             filters=128,
-                             kernel_size=[kt+4,kf+4],
-                             padding="same",
-                             activation=activation)
-
-    conv3c = tf.layers.conv2d(inputs=conv3b,
-                             filters=128,
-                             kernel_size=[kt+4,kf+4],
-                             padding="same",
-                             activation=activation)
-
-    conv3c = tf.contrib.layers.batch_norm(conv3c,scale=True)
-    # Pool layer 3
-    # in: [-1,15,256,64]
-    # out: [-1,5,85,64] (???!!!)
-    pool3 = tf.layers.max_pooling2d(inputs=conv3c,
-                                    pool_size=[2,2],
-                                    strides=3) #padding?
-
-    print '##### pool3 shape: ',np.shape(pool3)
-    # Conv. layer 4
-    # in: [-1,5,85,64]  XXX
-    # out: [-1,5,85,16]
-    conv4a = tf.layers.conv2d(inputs=pool3,
-                             filters=128*5,
-                             kernel_size=[kt+6,kf+6],
-                             padding="same",
-                             activation=activation)
-
-    conv4b = tf.layers.conv2d(inputs=conv4a,
-                             filters=128*5,
-                             kernel_size=[kt+6,kf+6],
-                             padding="same",
-                             activation=activation)
-
-    conv4c = tf.layers.conv2d(inputs=conv4b,
-                             filters=128*5,
-                             kernel_size=[kt+6,kf+6],
-                             padding="same",
-                             activation=activation)
-
-
-    conv4c = tf.contrib.layers.batch_norm(conv4c,scale=True)
-#    avg_pool = tf.layers.average_pooling2d(inputs=conv4c,pool_size=[4,4],strides=2,padding='same')
-
-    # Flatten
-    # in: [-1,5,85,16] XXX
-    # out: [-1,5*85*16=6800]
-    flatten = tf.reshape(conv4c,[-1,55040])
-
-    # Dense layer 1
-    # in: [-1,6800]
-    # out: [-1,2048]
-    dense1 = tf.layers.dense(inputs=flatten, units=11008, activation=activation)
-    dropout1 = tf.layers.dropout(inputs=dense1,rate=0.4,training=mode==tf.estimator.ModeKeys.TRAIN)
-    dropout1 = tf.contrib.layers.batch_norm(dropout1,scale=True)
-    #15,256,64 pool2?
-    #dropout1 = tf.reshape(dropout1, [-1,15,256,32])
-    #dropout1 = dropout1 + conv2a
-#pool3 2, 43, 128
-    dropout1 = tf.reshape(dropout1, [-1,2, 43, 128])
-    dropout1 = tf.concat([dropout1,pool3],3)
-    dropout1 = tf.reshape(dropout1, [-1,22016])
-
-    # in: [-1,2048]
-    # out: [-1,1024]
-    dense2 = tf.layers.dense(inputs=dropout1, units=1024, activation=activation)
-    dropout2 = tf.layers.dropout(inputs=dense2,rate=0.2,training=mode==tf.estimator.ModeKeys.TRAIN)
-    dropout2 = tf.contrib.layers.batch_norm(dropout2,scale=True)
-    # in: [-1,1024]
-    # out: [-1,60*1024]
-    output = tf.layers.dense(inputs=dropout2, units=512*30*2*8)
-    output_reshape = tf.contrib.layers.batch_norm(tf.reshape(output, [-1,30,512,16]),scale=True)
-    conv1a = tf.contrib.layers.batch_norm(conv1a)
-	
-    print 'output_reshape ',np.shape(output_reshape)
-    print 'conv1a ',np.shape(conv1a)
-    output_reshape = tf.concat([output_reshape,conv1a],3)
-    print 'Output of concat: ',np.shape(output_reshape)
-    final_conv = tf.layers.conv2d(inputs=output_reshape,
+    # Fully connected upsample layers
+    ulayer0 = upsample(slayer4, (5,32,128))
+    ulayer1 = upsample(ulayer0,(5,64,256))
+    # Fuse layers are skip layers
+    fuse_layer1 = tf.add(ulayer1,slayer3)
+    ulayer2 = tf.nn.dropout(upsample(fuse_layer1, (15,256,16)),keep_prob=.5)
+    ulayer3 = tf.nn.dropout(upsample(ulayer2, (30,512,64)),keep_prob=.3)
+    fuse_layer2 = tf.add(ulayer3,slayer1)
+    dense_stack = dense(fuse_layer2,(30,256,1))
+    final_conv = tf.layers.conv2d(inputs=fuse_layer2,
                              filters=8,
-                             kernel_size=[kt,kf],
+                             kernel_size=[5,5],
                              padding="same",
                              activation=activation)
     final_conv = tf.reshape(final_conv, [-1,60*1024,2])
@@ -206,7 +140,7 @@ def cnn(features,labels,mode):
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         print 'Mode is train.'
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate=.01)
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=.1)
         train_op = optimizer.minimize(loss=loss,global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec(mode=mode,loss=loss,train_op=train_op)
 
@@ -255,31 +189,23 @@ def preprocess(data):
 
 def main(args):
     tset_size = 1000
-    trainlen = 800
+    trainlen = 700
     steps = 10
     # load data
     f = h5py.File('SimVisRFI.h5', 'r')
     # We want to add real data in between sim data w/ xrfi flags
     real_data = import_test_data('zen.2457555.40356.xx.HH.uvcT').reshape(1,-1,1024) 
-    print 'real_data shape: ',np.shape(real_data.reshape(-1,1024))
     real_flags = xrfi.xrfi(np.abs(real_data.reshape(-1,1024))).reshape(1,-1,1024)
     all_data = preprocess(f['data'])
-    print np.shape(all_data)
     train_data = np.asarray(all_data)[:trainlen,:,:,:]
-    print np.shape(train_data)
     train_data = np.asarray(train_data, dtype=np.float32)
-    #train_data[np.isinf(train_data)] = 0.
     train_labels = np.reshape(np.asarray(f['flag'])[:trainlen,:,:], (trainlen, 1024*60))
     train_labels = np.asarray(train_labels, dtype=np.int32)
     eval_data = np.asarray(all_data)[trainlen:,:,:,:]
-#    eval_data = real_data
     eval_data = np.asarray(eval_data,dtype=np.float32)
-    #eval_data[np.isinf(eval_data)] = 0.
     eval_labels = np.asarray(f['flag'],dtype=np.int32)[trainlen:,:,:]
-    #eval_labels = real_flags
     eval_labels = np.reshape(eval_labels, (tset_size-trainlen, 1024*60))
 
-#    real_data = import_test_data('zen.2457555.40356.xx.HH.uvcT').reshape(1,-1,1024)
     real_data_ = np.asarray(preprocess(real_data), dtype=np.float32)
     real_data = real_data.reshape(-1,1024)
     # create Estimator
@@ -288,7 +214,7 @@ def main(args):
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x":train_data},
         y=train_labels,
-        batch_size=10,
+        batch_size=5,
         num_epochs=100,
         shuffle=True,
     )
@@ -298,15 +224,17 @@ def main(args):
     eval_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x":eval_data},
         y=eval_labels,
-        num_epochs=3,
-        shuffle=False)
+        num_epochs=10,
+        shuffle=False)	
 
-    #real_data_ = real_data_.reshape(-1,1024,2)
 
     test_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x":real_data_},
         shuffle=False
     )
+# Eval mode is turned off for now, it requests a substantial amount of memory for
+# the current version of this CNN
+
 #    eval_results = rfiCNN.evaluate(input_fn=eval_input_fn)
 #    print(eval_results)
 
@@ -321,13 +249,11 @@ def main(args):
         plt.colorbar()
         plt.subplot(312)
 	plt.imshow(np.log10((np.abs(real_data).reshape(-1,1024))),aspect='auto')
-        #plt.imshow(train_labels[1,:].reshape(-1,1024) - predicts['classes'].reshape(-1,1024),aspect='auto')
         plt.colorbar()
 	plt.subplot(313)
 	plt.imshow(np.log10((np.abs(real_data*np.logical_not(predicts['classes'].reshape(-1,1024))))),aspect='auto')
 	plt.colorbar()
         plt.savefig('RealData.png')
-#        pl.show()
 
 if __name__ == "__main__":
     tf.app.run()
