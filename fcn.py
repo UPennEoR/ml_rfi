@@ -26,13 +26,13 @@ def stacked_layer(input_layer,num_filter_layers,kt,kf,activation,stride,pool,bno
                              padding="same",
                              activation=activation)
 
-    convb = tf.layers.conv2d(inputs=conva,
-                             filters=num_filter_layers,
-                             kernel_size=[kt,kf],
-                             padding="same",
-                             activation=activation)
+#    convb = tf.layers.conv2d(inputs=conva,
+#                             filters=num_filter_layers,
+#                             kernel_size=[kt,kf],
+#                             padding="same",
+#                             activation=activation)
 
-    convc = tf.layers.conv2d(inputs=convb,
+    convc = tf.layers.conv2d(inputs=conva,
                              filters=num_filter_layers,
                              kernel_size=[kt,kf],
                              padding="same",
@@ -78,12 +78,15 @@ def dense(input_layer,out_size):
     """
     sh = input_layer.get_shape().as_list()
     input_layer_reshape = tf.reshape(input_layer, [-1,sh[1]*sh[2]*sh[3]])
-    fc1 = tf.contrib.layers.fully_connected(input_layer,num_outputs=sh[2]*2)
-    fc2 = tf.contrib.layers.fully_connected(fc1,num_outputs=sh[2]*4)
-    fc3 = tf.contrib.layers.fully_connected(fc2,num_outputs=sh[2]*8)
-    fc4 = tf.contrib.layers.fully_connected(fc3,num_outputs=out_size[0]*out_size[1]*out_size[2])
-    fc4_reshape = tf.reshape(fc4, [-1,out_size[0],out_size[1],out_size[2]])
-    return fc4_reshape
+    fc1 = tf.layers.dense(input_layer_reshape, units=1024)
+    fc2 = tf.layers.dense(fc1, units=1024*60)
+    fc3 = tf.layers.dense(fc2, units=out_size[0]*out_size[1]*out_size[2])
+#    fc1 = tf.contrib.layers.fully_connected(input_layer,num_outputs=32) # 32
+#    fc2 = tf.contrib.layers.fully_connected(fc1,num_outputs=64) # 64
+#    fc3 = tf.contrib.layers.fully_connected(fc2,num_outputs=128) # 128
+#    fc4 = tf.contrib.layers.fully_connected(fc3,num_outputs=out_size[0]*out_size[1]*out_size[2]) # out sizes
+    fc3_reshape = tf.reshape(fc3, [-1,out_size[0],out_size[1],out_size[2]])
+    return fc3_reshape
 
 def cnn(features,labels,mode):
     """
@@ -96,38 +99,41 @@ def cnn(features,labels,mode):
 
     activation=tf.nn.elu # exponential linear unit
     # kernel size
-    kt = 5 # success of finding RFI in real data seems to strongly depend on these 
-    kf = 5 # 7,7 seems like the ideal spot so far
+    kt = 7 # success of finding RFI in real data seems to strongly depend on these 
+    kf = 7 # 7,7 seems like the ideal spot so far
 
     # 4D tensor: batch size, height (ntimes), width (nfreq), channels (1)
     input_layer = tf.reshape(features["x"],[-1,60,1024,2])
 
     # 3x stacked layers similar to VGG
     #in: 60,1024,2
-    slayer1 = stacked_layer(input_layer,64,kt,kf,activation,[2,2],[2,2])
-    #1: 30,512,64
-    slayer2 = stacked_layer(slayer1,128,kt*2,kf*2,activation,[2,2],[2,2],bnorm=False)
-    #2: 15,256,128
-    slayer3 = stacked_layer(slayer2,256,kt*3,kf*3,activation,[3,4],[2,2]) 
-    #3: 5,64,256
-    slayer4 = stacked_layer(slayer3,512,kt*4,kf*4,activation,[1,4],[1,2],bnorm=False)
-    #4: 5,16,512
+    slayer1 = stacked_layer(input_layer,16,kt,kf,activation,[4,4],[4,4],bnorm=True)
+    #1: 15,256,32
+    slayer2 = stacked_layer(slayer1,32,3,4,activation,[3,4],[3,4],bnorm=True)
+    #2: 5,64,64
+    slayer3 = stacked_layer(slayer2,64,1,2,activation,[1,2],[1,2],bnorm=True) 
+    #3: 5,32,256
+#    slayer4 = stacked_layer(slayer3,512,kt*4,kf*4,activation,[1,4],[1,2],bnorm=False)
+#    #4: 5,16,512
 
     # Fully connected upsample layers
-    ulayer0 = upsample(slayer4, (5,32,128))
-    ulayer1 = upsample(ulayer0,(5,64,256))
+    ulayer0 = upsample(slayer3, (15,256,32))
+#    ulayer1 = upsample(ulayer0,(5,64,256))
     # Fuse layers are skip layers
-    fuse_layer1 = tf.add(ulayer1,slayer3)
-    ulayer2 = tf.nn.dropout(upsample(fuse_layer1, (15,256,16)),keep_prob=.5)
-    ulayer3 = tf.nn.dropout(upsample(ulayer2, (30,512,64)),keep_prob=.3)
-    fuse_layer2 = tf.add(ulayer3,slayer1)
-    dense_stack = dense(fuse_layer2,(30,256,1))
-    final_conv = tf.layers.conv2d(inputs=fuse_layer2,
-                             filters=8,
-                             kernel_size=[5,5],
+    fuse_layer1 = ulayer0 #tf.add(ulayer0,slayer1)
+    ulayer1 = tf.nn.dropout(upsample(fuse_layer1, (15,128,2)),keep_prob=1.)
+#    ulayer3 = tf.nn.dropout(upsample(ulayer2, (30,512,64)),keep_prob=.3)
+    ulayer1 = dense(ulayer1, (60,1024,1))
+#    fuse_layer2 = tf.add(ulayer3,slayer1)
+#    dense_stack = dense(ulayer1,(30,256,1))
+#    ulayer1 = tf.reshape(ulayer1, [-1, 60,1024,1])
+    final_conv = tf.layers.conv2d(inputs=ulayer1,
+                             filters=2,
+                             kernel_size=[10,10],
                              padding="same",
                              activation=activation)
     final_conv = tf.reshape(final_conv, [-1,60*1024,2])
+
     predictions = {
         "classes": tf.argmax(input=final_conv, axis=2),
         "probabilities": tf.nn.softmax(final_conv,name="softmax_tensor")
@@ -140,7 +146,7 @@ def cnn(features,labels,mode):
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         print 'Mode is train.'
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate=.1)
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=.01)
         train_op = optimizer.minimize(loss=loss,global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec(mode=mode,loss=loss,train_op=train_op)
 
@@ -184,15 +190,15 @@ def preprocess(data):
    #if dim == 0:
    for b in range(batch):
        data_out[b,:,:,0] = timediff(data_a[b,:,:])
-       data_out[b,:,:,1] = timediff(data_b[b,:,:])   
+       data_out[b,:,:,1] = freqdiff(data_b[b,:,:])   
    return np.abs(data_out)
 
 def main(args):
     tset_size = 1000
     trainlen = 700
-    steps = 10
+    steps = 100
     # load data
-    f = h5py.File('SimVisRFI.h5', 'r')
+    f = h5py.File('SimVisRFI_15_120.h5','r')
     # We want to add real data in between sim data w/ xrfi flags
     real_data = import_test_data('zen.2457555.40356.xx.HH.uvcT').reshape(1,-1,1024) 
     real_flags = xrfi.xrfi(np.abs(real_data.reshape(-1,1024))).reshape(1,-1,1024)
@@ -214,7 +220,7 @@ def main(args):
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x":train_data},
         y=train_labels,
-        batch_size=5,
+        batch_size=3,
         num_epochs=100,
         shuffle=True,
     )
