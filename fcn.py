@@ -77,7 +77,11 @@ def dense(input_layer,out_size):
     except:
         scale = out_size[0]*out_size[1]
     print 'scale: ',scale
-    input_layer_reshape = tf.reshape(input_layer, [-1,sh[1]*sh[2]*sh[3]])
+    try:
+        input_layer_reshape = tf.reshape(input_layer, [-1,sh[1]*sh[2]*sh[3]])
+    except:
+        input_layer_reshape = tf.reshape(input_layer, [-1,sh[1]*sh[2]])
+
     fc3 = tf.layers.dense(input_layer_reshape, units=scale, activation=tf.nn.elu)
     try:
         fc3_reshape = tf.reshape(fc3, [-1,out_size[0],out_size[1],out_size[2]])
