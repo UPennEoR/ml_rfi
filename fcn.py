@@ -54,13 +54,13 @@ def upsample(input_layer,out_size):
     """
     sh = input_layer.get_shape().as_list()
     print sh,out_size
-    f_layers = (out_size[0]*out_size[1]*out_size[2])/(sh[2]*sh[1])
+    f_layers = int((1.*out_size[0]*out_size[1]*out_size[2])/(1.*sh[2]*sh[1]))
     print 'f_kayers: ',f_layers
     layer_reshape = tf.reshape(input_layer, [-1,sh[1]*sh[2]*sh[3]])
     fc_layer_reshape = tf.reshape(layer_reshape, [-1,sh[1],sh[2],sh[3]])
     upsamp = tf.layers.conv2d(inputs=fc_layer_reshape,
                              filters=f_layers,
-                             kernel_size=[2,2],
+                             kernel_size=[3,3],
                              padding="same",
                              activation=tf.nn.elu)    
     upsamp_reshape = tf.reshape(upsamp, [-1,out_size[0],out_size[1],out_size[2]])
@@ -100,35 +100,51 @@ def cnn(features,labels,mode):
 
     activation=tf.nn.elu # exponential linear unit
     # kernel size
-    kt = 3 # success of finding RFI in real data seems to strongly depend on these 
-    kf = 3 # 7,7 seems like the ideal spot so far
+    kt = 7 #
+    kf = 7 #
 
     # 4D tensor: batch size, height (ntimes), width (nfreq), channels (1)
-    input_layer = tf.reshape(features["x"],[-1,60,1024,1])
+    input_layer = tf.reshape(features["x"],[-1,60,1024,2])
 
     # 3x stacked layers similar to VGG
     #in: 60,1024,2
-    slayer1 = stacked_layer(input_layer,16,kt,kf,activation,[4,4],[4,4],bnorm=True)
-    #1: 15,256,32
-    slayer2 = stacked_layer(slayer1,32,3,4,activation,[3,4],[3,4],bnorm=True)
-    #2: 5,64,64
-    slayer3 = stacked_layer(slayer2,64,1,2,activation,[1,2],[1,2],bnorm=True) 
-    #3: 5,32,256
-    slayer4 = stacked_layer(slayer3,128,1,2,activation,[5,8],[5,8],bnorm=True)    
-    #4 1,4,128
+    slayer1 = stacked_layer(input_layer,8,kt,kf,activation,[5,4],[5,4],bnorm=True)
+    #1: 12,256,2
+    slayer2 = stacked_layer(slayer1,16,5,5,activation,[2,4],[2,4],bnorm=True)
+    #2: 6,64,4
+    slayer3 = stacked_layer(slayer2,32,3,3,activation,[1,2],[1,2],bnorm=True) 
+    #3: 6,32,8
+    slayer4 = stacked_layer(slayer3,64,3,3,activation,[1,1],[1,1],bnorm=True)    
+    #4 6,32,16
+#    slayer5 = stacked_layer(slayer4,32,1,1,activation,[1,1],[1,1],bnorm=True)
+    #5 5,16,256
+
+    tf.summary.image('Slayer4',tf.reshape(slayer4[:,:,:,0], [-1,6,32,1]))
 
     # FULLY CONNECT@!#!@!
-    fc1 = dense(slayer4, (4,16))
-    fc2 = dense(fc1, (20,128))
-    fc3 = dense(fc2, (20,128,16))
+    fc1 = dense(slayer4, (15,256)) #5,64
+    fc2 = dense(fc1, (15,256)) #15,128
+    fc3 = tf.nn.dropout(dense(fc2, (15,256)), keep_prob=.3)
+    fc4 = dense(fc3, (15,256))
+    fc5 = tf.nn.dropout(dense(fc4, (30,512)), keep_prob=.3) #30,256
+    fc6 = dense(fc5, (30, 512))
+    fc7 = dense(fc6, (30, 512, 2))
+
+    tf.summary.image('Fully_Connected_5',tf.reshape(fc7[:,:,:,0], [-1,30,512,1]))
 
     # Upsampleeeeeeee
-    ulayer0 = upsample(fc3, (5,32,64))
-    ulayer1 = tf.nn.dropout(upsample(ulayer0,(15,128,16)),keep_prob=.7)
-    ulayer2 = tf.nn.dropout(upsample(ulayer1, (30,256,8)),keep_prob=.9)
+    ulayer0 = upsample(fc7, (30,512,32))
+    ulayer1 = tf.nn.dropout(upsample(ulayer0,(60,1024,16)),keep_prob=.3)
+    ulayer2 = upsample(ulayer1, (120,2048,8)) # hyper-resolve factor of 2
+    ulayer3 = upsample(ulayer2, (120,2048,4)) # keep hyper-resolve but drop channels 
+    ulayer4 = tf.layers.max_pooling2d(inputs=ulayer3,
+                                      pool_size=[2,2],
+                                      strides=[2,2]) #downsample back to proper size
 
-    final_conv = dense(ulayer2, (30,256,2))
-    final_conv = upsample(final_conv, (60,1024,2))
+    final_conv = upsample(ulayer4, (60,1024,2))
+
+    tf.summary.image('Output_Layer',tf.reshape(final_conv[:,:,:,0], [-1,60,1024,1]))
+
     final_conv = tf.reshape(final_conv, [-1,60*1024,2])
 
     predictions = {
@@ -143,7 +159,7 @@ def cnn(features,labels,mode):
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         print 'Mode is train.'
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate=.01)
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=.1)
         train_op = optimizer.minimize(loss=loss,global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec(mode=mode,loss=loss,train_op=train_op)
 
@@ -175,47 +191,60 @@ def freqdiff(data):
 
 def preprocess(data):
    # data array size should be (batch,time,freq)                                                                                   
-   data_a = np.copy(data)
+   data_a = np.nan_to_num(np.copy(data))
    batch,t_num,f_num = np.shape(data)
    # initialize output array                                                                                                   
-   data_out = np.zeros((batch,t_num,f_num))
+   data_out = np.zeros((batch,t_num,f_num,2))
    for b in range(batch):
        data_ = np.copy(data_a[b,:,:])
-       data_ -= np.nanmean(data_)
+ #      data_ = np.nan_to_num(np.log10(np.abs(data_)))
        data_ /= np.nanmax(np.abs(data_))
-       data_out[b,:,:] = np.log10(np.abs(data_))
+       data_ -= np.nanmean(data_)
+       data_ = np.log10(np.abs(data_))
+       data_out[b,:,:,0] = data_
+       data_angle = np.angle(np.copy(data_a[b,:,:]))
+       data_angle -= np.mean(data_angle)
+       data_out[b,:,:,1] = data_angle
    return np.nan_to_num(data_out)
 
 
 def main(args):
-    tset_size = 300
-    trainlen = 200
-    steps = 100000
+    tset_size = 288
+    trainlen = 220
+    steps = 100
     # load data
-    f = h5py.File('SimVisRFI_15_120_NoStations.h5','r')
+    f = h5py.File('RealVisRFI_v2.h5','r')
     # We want to add real data in between sim data w/ xrfi flags
-#    real_data = import_test_data('zen.2457555.40356.xx.HH.uvcT').reshape(1,-1,1024) 
-#    real_flags = xrfi.xrfi(np.abs(real_data.reshape(-1,1024))).reshape(1,-1,1024)
+    rdf = h5py.File('RealData.h5','r')
+    #real_data = preprocess(rdf['data']) #import_test_data('zen.2457555.40356.xx.HH.uvcT').reshape(1,-1,1024) 
+    #real_flags = rdf['flags']#xrfi.xrfi(np.abs(rdf['data'].reshape(-1,1024)))
     all_data = preprocess(f['data'])
-    train_data = np.asarray(all_data)[:trainlen,:,:]
+    train_data = np.asarray(all_data)[:trainlen,:,:,:]
     train_data = np.asarray(train_data, dtype=np.float32)
     train_labels = np.reshape(np.asarray(f['flag'])[:trainlen,:,:], (trainlen, 1024*60))
     train_labels = np.asarray(train_labels, dtype=np.int32)
-    eval_data = np.asarray(all_data)[trainlen:,:,:]
+    eval_data = np.asarray(all_data)[trainlen:,:,:,:]
     eval_data = np.asarray(eval_data,dtype=np.float32)
     eval_labels = np.asarray(f['flag'],dtype=np.int32)[trainlen:,:,:]
     eval_labels = np.reshape(eval_labels, (tset_size-trainlen, 1024*60))
 
-#    real_data_ = np.asarray(preprocess(real_data), dtype=np.float32)
-#    real_data = real_data.reshape(-1,1024)
+    #real_data = np.asarray(f['data'])[100,:,:]
+    real_data = np.asarray(all_data)[101,:,:,:]
+    real_data = np.asarray(real_data, dtype=np.float32)
+    real_labels = np.reshape(np.asarray(f['flag'])[101,:,:], (60,1024))
+    real_labels = np.asarray(real_labels, dtype=np.int32)
+
+    #real_data_ = np.asarray(real_data, dtype=np.float32)
+    #real_data = real_data_.reshape(-1,1024)
+    rd_plot = np.asarray(rdf['data'], dtype=complex).reshape(-1,1024)
     # create Estimator
     rfiCNN = tf.estimator.Estimator(model_fn=cnn,model_dir='/pylon5/as5fp5p/jkerriga/checkpoint/')
 
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x":train_data},
         y=train_labels,
-        batch_size=20,
-        num_epochs=1000,
+        batch_size=50,
+        num_epochs=10000,
         shuffle=True,
     )
 
@@ -224,19 +253,19 @@ def main(args):
     eval_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x":eval_data},
         y=eval_labels,
-        num_epochs=10,
+        num_epochs=1000,
         shuffle=False)	
 
 
     test_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x":eval_data[0,:,:]},
+        x={"x":real_data},
         shuffle=False
     )
 # Eval mode is turned off for now, it requests a substantial amount of memory for
 # the current version of this CNN
 
-#    eval_results = rfiCNN.evaluate(input_fn=eval_input_fn)
-#    print(eval_results)
+    eval_results = rfiCNN.evaluate(input_fn=eval_input_fn)
+    print(eval_results)
 
     rfiPredict = rfiCNN.predict(input_fn=test_input_fn)
     for i,predicts in enumerate(rfiPredict):
@@ -244,15 +273,27 @@ def main(args):
         idxs = np.where(train_labels[1,:] == 1)
         print predicts['probabilities'][idxs]
 
-        plt.subplot(311)
+        plt.subplot(411)
         plt.imshow(predicts['classes'].reshape(-1,1024),aspect='auto')
+        plt.title('Predicted Flags')
         plt.colorbar()
-        plt.subplot(312)
-	plt.imshow(eval_data[0,:,:].reshape(-1,1024),aspect='auto')
+
+        plt.subplot(412)
+        plt.imshow(real_labels.reshape(-1,1024),aspect='auto')
+        plt.title('XRFI Flags')
         plt.colorbar()
-	plt.subplot(313)
-	plt.imshow(eval_data[0,:,:]*np.logical_not(predicts['classes'].reshape(-1,1024)),aspect='auto')
-	plt.colorbar()
+
+        plt.subplot(413)
+	plt.imshow(real_data[:,:,0],aspect='auto')
+        plt.colorbar()
+        plt.title('Vis. Log Normalized Amp.')
+
+        plt.subplot(414)
+        plt.imshow(real_data[:,:,1],aspect='auto')
+        plt.colorbar()
+        plt.title('Vis. Phs.')
+        
+
         plt.savefig('RealData.png')
 
 if __name__ == "__main__":
