@@ -100,8 +100,8 @@ def cnn(features,labels,mode):
 
     activation=tf.nn.elu # exponential linear unit
     # kernel size
-    kt = 7 #
-    kf = 7 #
+    kt = 2 #
+    kf = 2 #
 
     # 4D tensor: batch size, height (ntimes), width (nfreq), channels (1)
     input_layer = tf.reshape(features["x"],[-1,60,1024,2])
@@ -110,7 +110,7 @@ def cnn(features,labels,mode):
     #in: 60,1024,2
     slayer1 = stacked_layer(input_layer,8,kt,kf,activation,[5,4],[5,4],bnorm=True)
     #1: 12,256,2
-    slayer2 = stacked_layer(slayer1,16,5,5,activation,[2,4],[2,4],bnorm=True)
+    slayer2 = stacked_layer(slayer1,16,3,3,activation,[2,4],[2,4],bnorm=True)
     #2: 6,64,4
     slayer3 = stacked_layer(slayer2,32,3,3,activation,[1,2],[1,2],bnorm=True) 
     #3: 6,32,8
@@ -124,9 +124,9 @@ def cnn(features,labels,mode):
     # FULLY CONNECT@!#!@!
     fc1 = dense(slayer4, (15,256)) #5,64
     fc2 = dense(fc1, (15,256)) #15,128
-    fc3 = tf.nn.dropout(dense(fc2, (15,256)), keep_prob=.3)
+    fc3 = tf.nn.dropout(dense(fc2, (15,256)), keep_prob=.7)
     fc4 = dense(fc3, (15,256))
-    fc5 = tf.nn.dropout(dense(fc4, (30,512)), keep_prob=.3) #30,256
+    fc5 = tf.nn.dropout(dense(fc4, (30,512)), keep_prob=.7) #30,256
     fc6 = dense(fc5, (30, 512))
     fc7 = dense(fc6, (30, 512, 2))
 
@@ -134,7 +134,7 @@ def cnn(features,labels,mode):
 
     # Upsampleeeeeeee
     ulayer0 = upsample(fc7, (30,512,32))
-    ulayer1 = tf.nn.dropout(upsample(ulayer0,(60,1024,16)),keep_prob=.3)
+    ulayer1 = tf.nn.dropout(upsample(ulayer0,(60,1024,16)),keep_prob=.7)
     ulayer2 = upsample(ulayer1, (120,2048,8)) # hyper-resolve factor of 2
     ulayer3 = upsample(ulayer2, (120,2048,4)) # keep hyper-resolve but drop channels 
     ulayer4 = tf.layers.max_pooling2d(inputs=ulayer3,
@@ -211,7 +211,7 @@ def preprocess(data):
 def main(args):
     tset_size = 288
     trainlen = 220
-    steps = 100
+    steps = 10000000
     # load data
     f = h5py.File('RealVisRFI_v2.h5','r')
     # We want to add real data in between sim data w/ xrfi flags
@@ -243,8 +243,8 @@ def main(args):
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x":train_data},
         y=train_labels,
-        batch_size=50,
-        num_epochs=10000,
+        batch_size=15,
+        num_epochs=1000,
         shuffle=True,
     )
 
