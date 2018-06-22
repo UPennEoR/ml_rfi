@@ -177,10 +177,10 @@ def cnn(features,labels,mode):
         "probabilities": tf.nn.softmax(final_conv,name="softmax_tensor")
     }
 
-    #try:    
-    loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=final_conv)
-    #except:
-    #    pass
+    try:    
+        loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=final_conv)
+    except:
+        pass
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         print 'Mode is train.'
@@ -202,19 +202,29 @@ def main(args):
     f1 = h5py.File('RealVisRFI_v3.h5','r') # Load in a real dataset 
     f2 = h5py.File('SimVisRFI_15_120_v3.h5','r') # Load in simulated data
 
+    train = True
+    evaluate = True
+    test = True
+
     # We want to augment our training dataset with the entirety of the simulated data
     # but with only half of the real data. The remaining real data half will become
     # the evaluation dataset
 
     
-    f1_r = 1000 #np.shape(f1['data'])[0]
-    f2_s = 600#np.shape(f2['data'])[0]
+    f1_r = np.shape(f1['data'])[0]
+    f2_s = np.shape(f2['data'])[0]
 
     print 'Size of real dataset: ',f1_r
     # Cut up real dataset and labels
-    for i in range(f1_r):
+    if train|evaluate:
+        f1_r = np.shape(f1['data'])[0] #Use full real dataset
+        samples = range(f1_r)
+    else:
+        rnd_ind = np.random.randint(0,np.shape(f1['data'])[0])
+        samples = [rnd_ind]
+    for i in samples:        
         print i
-        if i == 0:
+        if i == samples[0]:
             f_real = fold(f1['data'][i,:,:],16)
             f_real_labels = fold(f1['flag'][i,:,:],16,labels=True)
         else:
@@ -222,63 +232,69 @@ def main(args):
             f_real_labels = np.vstack((f_real_labels,fold(f1['flag'][i,:,:],16,labels=True)))
 
     # Cut up sim dataset and labels
-    for i in range(f2_s):
-        print i
-        if i ==0:
-            f_sim = fold(f2['data'][i,:,:],16)
-            f_sim_labels = fold(f2['flag'][i,:,:],16,labels=True)
-        else:
-            f_sim = np.vstack((f_sim,fold(f2['data'][i,:,:],16)))
-            f_sim_labels = np.vstack((f_sim_labels,fold(f2['flag'][i,:,:],16,labels=True)))
+    if train:
+        for i in range(f2_s):
+            print i
+            if i ==0:
+                f_sim = fold(f2['data'][i,:,:],16)
+                f_sim_labels = fold(f2['flag'][i,:,:],16,labels=True)
+            else:
+                f_sim = np.vstack((f_sim,fold(f2['data'][i,:,:],16)))
+                f_sim_labels = np.vstack((f_sim_labels,fold(f2['flag'][i,:,:],16,labels=True)))
 
     real_sh = np.shape(f_real)
 
     # Format evaluation dataset
-    eval_data = np.asarray(f_real[real_sh[0]/2:,:,:,:],dtype=np.float32)
-    eval_labels = np.asarray(f_real_labels[real_sh[0]/2:,:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
+    if evaluate:
+        eval_data = np.asarray(f_real[real_sh[0]/2:,:,:,:],dtype=np.float32)
+        eval_labels = np.asarray(f_real_labels[real_sh[0]/2:,:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
 
     # Format training dataset
-    train_data = np.asarray(np.vstack((f_sim,f_real[:real_sh[0]/2,:,:,:])),dtype=np.float32)
-    train_labels = np.asarray(np.vstack((f_sim_labels,f_real_labels[:real_sh[0]/2,:,:])),dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
+    if train|evaluate:
+        train_data = np.asarray(np.vstack((f_sim,f_real[:real_sh[0]/2,:,:,:])),dtype=np.float32)
+        train_labels = np.asarray(np.vstack((f_sim_labels,f_real_labels[:real_sh[0]/2,:,:])),dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
 
-    train0 = np.shape(train_data)[0]
-    eval1 = np.shape(eval_data)[0]
-    steps = train0
+        train0 = np.shape(train_data)[0]
+        eval1 = np.shape(eval_data)[0]
+        steps = 10*train0
 
     # Format a single test dataset
-    rnd_ind = np.random.randint(0,f1_r)
-    test_data = np.asarray(fold(f1['data'][rnd_ind,:,:],16), dtype=np.float32) # Random real visibility for testing
-    test_labels = np.asarray(fold(f1['flag'][rnd_ind,:,:],16,labels=True), dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
+    if test:
+        test_data = np.asarray(fold(f1['data'][rnd_ind,:,:],16), dtype=np.float32) # Random real visibility for testing
+        test_labels = np.asarray(fold(f1['flag'][rnd_ind,:,:],16,labels=True), dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
 
     # create Estimator
     rfiCNN = tf.estimator.Estimator(model_fn=cnn,model_dir='./checkpoint_Patch4/')
 
-    train_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x":train_data},
-        y=train_labels,
-        batch_size=10,
-        num_epochs=1000,
-        shuffle=True,
-    )
+    if train:
+        train_input_fn = tf.estimator.inputs.numpy_input_fn(
+            x={"x":train_data},
+            y=train_labels,
+            batch_size=10,
+            num_epochs=1000,
+            shuffle=True,
+        )
 
-    rfiCNN.train(input_fn=train_input_fn, steps=steps)
+    if evaluate:
+        eval_input_fn = tf.estimator.inputs.numpy_input_fn(
+            x={"x":eval_data},
+            y=eval_labels,
+            num_epochs=100,
+            shuffle=False)	
 
-    eval_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x":eval_data},
-        y=eval_labels,
-        num_epochs=100,
-        shuffle=False)	
-
-
-    test_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x":test_data},
-        shuffle=False
-    )
-
-    eval_results = rfiCNN.evaluate(input_fn=eval_input_fn)
-    print(eval_results)
-
-    rfiPredict = rfiCNN.predict(input_fn=test_input_fn)
+    if test:
+        test_input_fn = tf.estimator.inputs.numpy_input_fn(
+            x={"x":test_data},
+            shuffle=False
+        )
+    
+    if train:
+        rfiCNN.train(input_fn=train_input_fn, steps=steps)
+    elif evaluate:
+        eval_results = rfiCNN.evaluate(input_fn=eval_input_fn)
+        print(eval_results)
+    elif test:
+        rfiPredict = rfiCNN.predict(input_fn=test_input_fn)
 
     # Predict on the test dataset where labels are hidden
     for i,predicts in enumerate(rfiPredict):
@@ -299,7 +315,7 @@ def main(args):
     plt.colorbar()
 
     plt.subplot(412)
-    plt.imshow(real_labels.reshape(-1,1024),aspect='auto')
+    plt.imshow(test_labels.reshape(-1,1024),aspect='auto')
     plt.title('XRFI Flags')
     plt.colorbar()
 
@@ -316,7 +332,7 @@ def main(args):
     plt.savefig('RealData.png')
         
     cnn_flags = np.logical_not(cnn_flags)
-    xrfi_flags = np.logical_not(real_labels.reshape(-1,1024))
+    xrfi_flags = np.logical_not(test_labels.reshape(-1,1024))
     plt.subplot(211)
     plt.imshow(np.log10(np.abs(f1['data'][rnd_ind,:,:]*cnn_flags)),aspect='auto')
     plt.title('Predicted Flags Applied')
