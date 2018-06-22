@@ -219,6 +219,7 @@ def main(args):
     if train|evaluate:
         f1_r = np.shape(f1['data'])[0] #Use full real dataset
         samples = range(f1_r)
+        rnd_ind = np.random.randint(0,np.shape(f1['data'])[0])
     else:
         rnd_ind = np.random.randint(0,np.shape(f1['data'])[0])
         samples = [rnd_ind]
