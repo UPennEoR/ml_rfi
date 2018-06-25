@@ -35,6 +35,21 @@ def fold(data,ch_fold,labels=False):
             data_fold[i,:,:,1] = np.angle(data[:,i*dfreqs:(i+1)*dfreqs])
     return data_fold.real
 
+def transpose(X):
+    return X.T
+
+def normalize(X):
+    sh = np.shape(X)
+    LOGabsX = np.nan_to_num(np.log10(np.abs(X+np.random.rand(sh[0],sh[1])))).real
+    return (LOGabsX-np.nanmean(LOGabsX))/np.nanmax(np.abs(LOGabsX))
+
+def fold2(data,ch_fold,labels=False):
+    sh = np.shape(data)
+    _data = data.T.reshape(ch_fold,sh[1]/ch_fold,-1)
+    _DATA = np.array(map(transpose,_data))
+    DATA = _DATA#np.stack((np.array(map(normalize,_DATA)),np.angle(_DATA)),axis=-1)
+    return DATA
+
 def unfold(data_fold,nchans):
     ch_fold,ntimes,dfreqs = np.shape(data_fold)
     data = np.zeros_like(data_fold).reshape(60,1024)
@@ -184,7 +199,7 @@ def cnn(features,labels,mode):
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         print 'Mode is train.'
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate=.1)
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=.001)
         train_op = optimizer.minimize(loss=loss,global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec(mode=mode,loss=loss,train_op=train_op)
 
@@ -211,17 +226,18 @@ def main(args):
     # the evaluation dataset
 
     
-    f1_r = np.shape(f1['data'])[0]
+    f1_r = 900#np.shape(f1['data'])[0]
     f2_s = np.shape(f2['data'])[0]
 
     print 'Size of real dataset: ',f1_r
+    print ''
     # Cut up real dataset and labels
     if train|evaluate:
-        f1_r = np.shape(f1['data'])[0] #Use full real dataset
+        f1_r = 900 #np.shape(f1['data'])[0] # Everything after 900 doesn't look good
         samples = range(f1_r)
-        rnd_ind = np.random.randint(0,np.shape(f1['data'])[0])
+        rnd_ind = np.random.randint(0,f1_r)
     else:
-        rnd_ind = np.random.randint(0,np.shape(f1['data'])[0])
+        rnd_ind = np.random.randint(0,f1_r)
         samples = [rnd_ind]
     for i in samples:        
         print i
@@ -291,10 +307,10 @@ def main(args):
     
     if train:
         rfiCNN.train(input_fn=train_input_fn, steps=steps)
-    elif evaluate:
+    if evaluate:
         eval_results = rfiCNN.evaluate(input_fn=eval_input_fn)
         print(eval_results)
-    elif test:
+    if test:
         rfiPredict = rfiCNN.predict(input_fn=test_input_fn)
 
     # Predict on the test dataset where labels are hidden
