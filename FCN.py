@@ -140,7 +140,7 @@ def fcn(features,labels,mode):
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         print 'Mode is train.'
-        optimizer = tf.train.AdamOptimizer(learning_rate=0.00001) #tf.train.GradientDescentOptimizer(learning_rate=.1)
+        optimizer = tf.train.AdamOptimizer(learning_rate=0.1) #tf.train.GradientDescentOptimizer(learning_rate=.1)
         train_op = optimizer.minimize(loss=loss,global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec(mode=mode,loss=loss,train_op=train_op)
 
@@ -218,7 +218,7 @@ def main(args):
         train_input_fn = tf.estimator.inputs.numpy_input_fn(
             x={"x":train_data},
             y=train_labels,
-            batch_size=5,
+            batch_size=100,
             num_epochs=1000,
             shuffle=True,
         )
@@ -238,10 +238,10 @@ def main(args):
         )
     
     if train:
-        rfiCNN.train(input_fn=train_input_fn, steps=steps)
+        rfiFCN.train(input_fn=train_input_fn, steps=steps)
 
     if evaluate:
-        eval_results = rfiCNN.evaluate(input_fn=eval_input_fn)
+        eval_results = rfiFCN.evaluate(input_fn=eval_input_fn)
         try:
             output = open('eval_results.txt','w')
             output.write(eval_results)
@@ -250,7 +250,7 @@ def main(args):
         print(eval_results)
 
     if test:
-        rfiPredict = rfiCNN.predict(input_fn=test_input_fn)
+        rfiPredict = rfiFCN.predict(input_fn=test_input_fn)
 
     # Predict on the test dataset where labels are hidden
     #print 'Prediction dataset is size: ',np.shape(train_data)[0]
