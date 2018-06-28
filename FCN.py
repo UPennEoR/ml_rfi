@@ -20,7 +20,7 @@ def normalize(X):
     Normalization for the log amplitude required in the folding process.
     """
     sh = np.shape(X)
-    LOGabsX = np.nan_to_num(np.log10(np.abs(X+(1e-7)*np.random.rand(sh[0],sh[1])))).real
+    LOGabsX = np.nan_to_num(np.log10(np.abs(X+(1e-5)*np.random.rand(sh[0],sh[1])))).real
     return (LOGabsX-np.nanmean(LOGabsX))/np.nanmax(np.abs(LOGabsX))
 
 def foldl(data,ch_fold=16):
@@ -30,8 +30,20 @@ def foldl(data,ch_fold=16):
     sh = np.shape(data)
     _data = data.T.reshape(ch_fold,sh[1]/ch_fold,-1)
     _DATA = np.array(map(transpose,_data))
-    return _DATA
+    _DATApad = np.array(map(pad,_DATA))
+    return _DATApad
 
+def pad(data):
+    sh = np.shape(data)
+    t_pad = (sh[1] - sh[0])
+    data_pad = np.pad(data,pad_width=((t_pad,t_pad),(2,2)),mode='constant')
+    return data_pad
+
+def unpad(data):
+    sh = np.shape(data)
+    t_unpad = sh[0]
+    return data[2:,2:][:-2,:-2][2:,:][:-2,:]
+                      
 def fold(data,ch_fold=16):
     """
     Folding function for carving waterfall visibilities with additional normalized log 
@@ -40,7 +52,8 @@ def fold(data,ch_fold=16):
     sh = np.shape(data)
     _data = data.T.reshape(ch_fold,sh[1]/ch_fold,-1)
     _DATA = np.array(map(transpose,_data))
-    DATA = np.stack((np.array(map(normalize,_DATA)),np.angle(_DATA)),axis=-1)
+    _DATApad = np.array(map(pad,_DATA))
+    DATA = np.stack((np.array(map(normalize,_DATApad)),np.angle(_DATApad)),axis=-1)
     return DATA
 
 def unfoldl(data_fold,nchans=1024):
@@ -48,8 +61,9 @@ def unfoldl(data_fold,nchans=1024):
     Unfolding function for recombining the carved label (flag) frequency windows back into a complete 
     waterfall visibility.
     """
-    ch_fold,ntimes,dfreqs = np.shape(data_fold)
-    data_ = np.array(map(transpose,data_fold))
+    data_unpad = np.array(map(unpad,data_fold))
+    ch_fold,ntimes,dfreqs = np.shape(data_unpad)
+    data_ = np.array(map(transpose,data_unpad))
     _data = data_.reshape(ch_fold*dfreqs,ntimes).T
     return _data
     
@@ -101,29 +115,29 @@ def fcn(features,labels,mode):
     kf = 3 
 
     # 4D tensor: batch size, height (ntimes), width (nfreq), channels (norm. log. amp, phase)
-    input_layer = tf.reshape(features["x"],[-1,60,64,2]) # this can be made size indep.
+    input_layer = tf.reshape(features["x"],[-1,68,68,2]) # this can be made size indep.
 
     # 3x stacked layers similar to VGG
-    #in: 60,64,2
-    slayer1 = stacked_layer(input_layer,64,kt,kf,activation,[2,2],[2,2],bnorm=True)
+    #in: 68,68,2
+    slayer1 = stacked_layer(input_layer,68,kt,kf,activation,[2,2],[2,2],bnorm=True)
 
-    #1: 30,32,64
-    slayer2 = stacked_layer(slayer1,128,kt,kf,activation,[2,2],[2,2],bnorm=True)
+    #1: 34,34,68
+    slayer2 = stacked_layer(slayer1,2*68,kt,kf,activation,[2,2],[2,2],bnorm=True)
 
-    #2: 15,16,128
-    slayer3 = stacked_layer(slayer2,4*192,kt,kf,activation,[3,2],[3,2],bnorm=True) 
+    #2: 17,17,136
+    slayer3 = stacked_layer(slayer2,4*68,kt,kf,activation,[2,2],[2,2],bnorm=True) 
 
-    #3: 5,8,768
-    slayer4 = stacked_layer(slayer3,4*384,kt,kf,activation,[1,1],[1,1],bnorm=True)    
+    #3: 8,8,272
+    slayer4 = stacked_layer(slayer3,8*68,kt,kf,activation,[2,2],[2,2],bnorm=True)    
 
-    #4 6,32,1536
-    slayer5 = stacked_layer(slayer4,1920,1,1,activation,[1,1],[1,1],bnorm=True)
+    #4 8,8,544
+    slayer5 = stacked_layer(slayer4,16*68,1,1,activation,[1,1],[1,1],bnorm=True)
 
-    #5 5,16,1920
+    #5 8,8,1088
     # Transpose convolution (deconvolve)
-    upsamp = tf.layers.conv2d_transpose(slayer5,filters=2,kernel_size=[56,57])
-
-    final_conv = tf.reshape(upsamp,[-1,60*64,2])
+    upsamp = tf.layers.conv2d_transpose(slayer5,filters=2,kernel_size=[65,65],activation=activation)
+    print 'Shape of upsamp: ',np.shape(upsamp)
+    final_conv = tf.reshape(upsamp,[-1,68*68,2])
 
     # Grab some output weight info for tensorboard
     #tf.summary.image('FullyConnected_stacked_layer5',tf.reshape(final_conv[0,:,:], [-1,60,64,2]))
@@ -140,7 +154,7 @@ def fcn(features,labels,mode):
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         print 'Mode is train.'
-        optimizer = tf.train.AdamOptimizer(learning_rate=0.1) #tf.train.GradientDescentOptimizer(learning_rate=.1)
+        optimizer = tf.train.AdamOptimizer(learning_rate=.0001) #tf.train.GradientDescentOptimizer(learning_rate=.1)
         train_op = optimizer.minimize(loss=loss,global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec(mode=mode,loss=loss,train_op=train_op)
 
@@ -149,7 +163,8 @@ def fcn(features,labels,mode):
         return tf.estimator.EstimatorSpec(mode=mode,predictions=predictions)
 
     eval_metric_ops = {
-        "accuracy": tf.metrics.accuracy(labels=labels,predictions=predictions['classes'])        
+        "accuracy": tf.metrics.accuracy(labels=labels,predictions=predictions['classes']),
+        "F1_score": tf.metrics.recall(labels=labels,predictions=predictions['classes'])
 }
     return tf.estimator.EstimatorSpec(mode=mode,loss=loss,eval_metric_ops=eval_metric_ops)
 
@@ -180,14 +195,14 @@ def main(args):
         rnd_ind = np.random.randint(0,f1_r)
         samples = [rnd_ind]
     time0 = time()
-    f_real = np.array(map(fold,f1['data'][:f1_r,:,:])).reshape(-1,60,64,2)
-    f_real_labels = np.array(map(foldl,f1['flag'][:f1_r,:,:])).reshape(-1,60,64)
+    f_real = np.array(map(fold,f1['data'][:f1_r,:,:])).reshape(-1,68,68,2)
+    f_real_labels = np.array(map(foldl,f1['flag'][:f1_r,:,:])).reshape(-1,68,68)
     print 'Training dataset loaded.'
 
     # Cut up sim dataset and labels
-    if train:
-        f_sim = np.array(map(fold,f2['data'][:f2_s,:,:])).reshape(-1,60,64,2)
-        f_sim_labels = np.array(map(foldl,f2['flag'][:f2_s,:,:])).reshape(-1,60,64)
+    if train|evaluate:
+        f_sim = np.array(map(fold,f2['data'][:f2_s,:,:])).reshape(-1,68,68,2)
+        f_sim_labels = np.array(map(foldl,f2['flag'][:f2_s,:,:])).reshape(-1,68,68)
         print 'Simulated training dataset loaded.'
 
     real_sh = np.shape(f_real)
@@ -204,7 +219,7 @@ def main(args):
 
         train0 = np.shape(train_data)[0]
         eval1 = np.shape(eval_data)[0]
-        steps = train0
+        steps = 100*train0
 
     # Format a single test dataset
     if test:
@@ -218,7 +233,7 @@ def main(args):
         train_input_fn = tf.estimator.inputs.numpy_input_fn(
             x={"x":train_data},
             y=train_labels,
-            batch_size=100,
+            batch_size=5,
             num_epochs=1000,
             shuffle=True,
         )
@@ -254,21 +269,22 @@ def main(args):
 
     # Predict on the test dataset where labels are hidden
     #print 'Prediction dataset is size: ',np.shape(train_data)[0]
-    obs_flags = np.zeros((16,60,64))#np.shape(train_data)[0],60,64))
-    probs = np.zeros((16,60,64))
+    obs_flags = np.zeros((16,68,68))#np.shape(train_data)[0],60,64))
+    probs = np.zeros((16,68,68))
     for i,predicts in enumerate(rfiPredict):
         print i,np.shape(predicts['probabilities'])
-        obs_flags[i,:,:] = predicts['classes'].reshape(60,64)
-        probs[i,:,:] = predicts['probabilities'][:,1].reshape(60,64)
+        obs_flags[i,:,:] = predicts['classes'].reshape(68,68)
+        probs[i,:,:] = predicts['probabilities'][:,1].reshape(68,68)
 
-    obs_flags = obs_flags.reshape(16,60,64)
-    probs = probs.reshape(16,60,64)
+    obs_flags = obs_flags.reshape(16,68,68)
+    probs = probs.reshape(16,68,68)
     cnn_flags = unfoldl(obs_flags)
     probs = unfoldl(probs)
+
     print time() - time0
     print 'Shape of CNN flags: ',np.shape(cnn_flags)
     print 'Shape of Test flags: ',np.shape(test_labels)
-    test_labels = unfoldl(test_labels.reshape(-1,60,64),1024)
+    test_labels = unfoldl(test_labels.reshape(-1,68,68),1024)
     plt.subplot(411)
     plt.imshow(cnn_flags,aspect='auto')
     plt.title('Predicted Flags')
