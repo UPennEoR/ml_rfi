@@ -4,7 +4,7 @@ import h5py
 import matplotlib
 matplotlib.use("AGG")
 import matplotlib.pyplot as plt
-from xrfi import xrfi_simple
+#from xrfi import xrfi_simple
 tf.logging.set_verbosity(tf.logging.INFO)
 from time import time
 
@@ -119,10 +119,10 @@ def fcn(features,labels,mode):
 
     # 3x stacked layers similar to VGG
     #in: 68,68,2
-    slayer1 = stacked_layer(input_layer,68,kt,kf,activation,[2,2],[2,2],bnorm=True)
+    slayer1 = stacked_layer(input_layer,68,kt,kf,activation,[4,4],[4,4],bnorm=True)
 
     #1: 34,34,68
-    slayer2 = stacked_layer(slayer1,2*68,kt,kf,activation,[2,2],[2,2],bnorm=True)
+    slayer2 = stacked_layer(slayer1,2*68,kt,kf,activation,[4,4],[4,4],bnorm=True)
 
     #2: 17,17,136
     slayer3 = stacked_layer(slayer2,4*68,kt,kf,activation,[2,2],[2,2],bnorm=True) 
@@ -132,10 +132,10 @@ def fcn(features,labels,mode):
 
     #4 8,8,544
     slayer5 = stacked_layer(slayer4,16*68,1,1,activation,[1,1],[1,1],bnorm=True)
-
+    print 'slayer5 shape: ',np.shape(slayer5)
     #5 8,8,1088
     # Transpose convolution (deconvolve)
-    upsamp = tf.layers.conv2d_transpose(slayer5,filters=2,kernel_size=[65,65],activation=activation)
+    upsamp = tf.layers.conv2d_transpose(slayer5,filters=2,kernel_size=[68,68],activation=activation)
     print 'Shape of upsamp: ',np.shape(upsamp)
     final_conv = tf.reshape(upsamp,[-1,68*68,2])
 
@@ -154,7 +154,7 @@ def fcn(features,labels,mode):
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         print 'Mode is train.'
-        optimizer = tf.train.AdamOptimizer(learning_rate=.0001) #tf.train.GradientDescentOptimizer(learning_rate=.1)
+        optimizer = tf.train.AdamOptimizer(learning_rate=.01) #tf.train.GradientDescentOptimizer(learning_rate=.1)
         train_op = optimizer.minimize(loss=loss,global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec(mode=mode,loss=loss,train_op=train_op)
 
