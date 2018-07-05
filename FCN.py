@@ -21,7 +21,7 @@ def normalize(X):
     """
     sh = np.shape(X)
     LOGabsX = np.nan_to_num(np.log10(np.abs(X+(1e-5)*np.random.rand(sh[0],sh[1])))).real
-    return (LOGabsX-np.nanmean(LOGabsX))/np.nanmax(np.abs(LOGabsX))
+    return (LOGabsX-np.nanmean(LOGabsX))/np.nanstd(np.abs(LOGabsX))
 
 def foldl(data,ch_fold=16):
     """
@@ -66,7 +66,7 @@ def unfoldl(data_fold,nchans=1024):
     data_ = np.array(map(transpose,data_unpad))
     _data = data_.reshape(ch_fold*dfreqs,ntimes).T
     return _data
-    
+
 def stacked_layer(input_layer,num_filter_layers,kt,kf,activation,stride,pool,bnorm=True):
     """
     Creates a 3x stacked layer of convolutional layers. Each layer uses the same kernel size.
@@ -119,10 +119,10 @@ def fcn(features,labels,mode):
 
     # 3x stacked layers similar to VGG
     #in: 68,68,2
-    slayer1 = stacked_layer(input_layer,68,kt,kf,activation,[4,4],[4,4],bnorm=True)
+    slayer1 = stacked_layer(input_layer,68,kt,kf,activation,[2,2],[2,2],bnorm=True)
 
     #1: 34,34,68
-    slayer2 = stacked_layer(slayer1,2*68,kt,kf,activation,[4,4],[4,4],bnorm=True)
+    slayer2 = stacked_layer(slayer1,2*68,kt,kf,activation,[2,2],[2,2],bnorm=True)
 
     #2: 17,17,136
     slayer3 = stacked_layer(slayer2,4*68,kt,kf,activation,[2,2],[2,2],bnorm=True) 
@@ -130,13 +130,19 @@ def fcn(features,labels,mode):
     #3: 8,8,272
     slayer4 = stacked_layer(slayer3,8*68,kt,kf,activation,[2,2],[2,2],bnorm=True)    
 
-    #4 8,8,544
-    slayer5 = stacked_layer(slayer4,16*68,1,1,activation,[1,1],[1,1],bnorm=True)
-    print 'slayer5 shape: ',np.shape(slayer5)
-    #5 8,8,1088
+    #4: 4,4,544
+    slayer5 = stacked_layer(slayer4,16*68,1,1,activation,[2,2],[2,2],bnorm=True)
+
+    #5: 2,2,1088
+    slayer6 = stacked_layer(slayer5,2*16*68,1,1,activation,[2,2],[2,2],bnorm=True)
+
+    #6 1,1,2176
+    slayer7 = stacked_layer(slayer6,4*16*68,1,1,activation,[1,1],[1,1],bnorm=True)
+    
+    #7 1,1,4352
     # Transpose convolution (deconvolve)
-    upsamp = tf.layers.conv2d_transpose(slayer5,filters=2,kernel_size=[68,68],activation=activation)
-    print 'Shape of upsamp: ',np.shape(upsamp)
+    upsamp = tf.layers.conv2d_transpose(slayer7,filters=2,kernel_size=[68,68],activation=activation)
+
     final_conv = tf.reshape(upsamp,[-1,68*68,2])
 
     # Grab some output weight info for tensorboard
@@ -154,7 +160,7 @@ def fcn(features,labels,mode):
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         print 'Mode is train.'
-        optimizer = tf.train.AdamOptimizer(learning_rate=.01) #tf.train.GradientDescentOptimizer(learning_rate=.1)
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=.0001)
         train_op = optimizer.minimize(loss=loss,global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec(mode=mode,loss=loss,train_op=train_op)
 
@@ -181,7 +187,7 @@ def main(args):
     # but with only half of the real data. The remaining real data half will become
     # the evaluation dataset
     
-    f1_r = 900 #np.shape(f1['data'])[0]
+    f1_r = 100 #np.shape(f1['data'])[0]
     f2_s = np.shape(f2['data'])[0]
 
     print 'Size of real dataset: ',f1_r
@@ -195,6 +201,7 @@ def main(args):
         rnd_ind = np.random.randint(0,f1_r)
         samples = [rnd_ind]
     time0 = time()
+    
     f_real = np.array(map(fold,f1['data'][:f1_r,:,:])).reshape(-1,68,68,2)
     f_real_labels = np.array(map(foldl,f1['flag'][:f1_r,:,:])).reshape(-1,68,68)
     print 'Training dataset loaded.'
@@ -219,7 +226,7 @@ def main(args):
 
         train0 = np.shape(train_data)[0]
         eval1 = np.shape(eval_data)[0]
-        steps = 100*train0
+        steps = train0
 
     # Format a single test dataset
     if test:
@@ -227,14 +234,14 @@ def main(args):
         test_labels = np.asarray(foldl(f1['flag'][rnd_ind,:,:],16), dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
 
     # create Estimator
-    rfiFCN = tf.estimator.Estimator(model_fn=fcn,model_dir='./checkpoint_Patch4_SimTrain/')
+    rfiFCN = tf.estimator.Estimator(model_fn=fcn,model_dir='./checkpoint_Patch5')
 
     if train:
         train_input_fn = tf.estimator.inputs.numpy_input_fn(
             x={"x":train_data},
             y=train_labels,
             batch_size=5,
-            num_epochs=1000,
+            num_epochs=100,
             shuffle=True,
         )
 
@@ -242,8 +249,8 @@ def main(args):
         eval_input_fn = tf.estimator.inputs.numpy_input_fn(
             x={"x":eval_data},
             y=eval_labels,
-            num_epochs=100,
-            shuffle=False
+            num_epochs=10,
+            shuffle=True
         )	
 
     if test:
