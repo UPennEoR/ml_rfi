@@ -100,6 +100,13 @@ def stacked_layer(input_layer,num_filter_layers,kt,kf,activation,stride,pool,bno
                                     strides=stride)
     return pool
 
+def batch_accuracy(labels,predictions):
+    labels = tf.cast(labels,dtype=tf.int64)
+    predictions = tf.cast(predictions,dtype=tf.int64)
+    correct = tf.reduce_sum(tf.cast(tf.equal(tf.add(labels,predictions),2),dtype=tf.int64))
+    total = tf.reduce_sum(labels)
+    return tf.divide(correct,total)
+
 def fcn(features,labels,mode):
     """
     Model for Deep Fully Convolutional Net RFI Flagger
@@ -155,23 +162,24 @@ def fcn(features,labels,mode):
 
     try:    
         loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=final_conv)
+        eval_metric_ops = {
+            "accuracy": tf.metrics.accuracy(labels=labels,predictions=predictions['classes']),
+            "F1_score": tf.metrics.recall(labels=labels,predictions=predictions['classes'])
+            }
     except:
         pass
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         print 'Mode is train.'
+        accuracy_hook = tf.train.LoggingTensorHook({"Batch Accuracy": batch_accuracy(labels,predictions['classes'])},every_n_iter=100)
         optimizer = tf.train.GradientDescentOptimizer(learning_rate=.0001)
         train_op = optimizer.minimize(loss=loss,global_step=tf.train.get_global_step())
-        return tf.estimator.EstimatorSpec(mode=mode,loss=loss,train_op=train_op)
+        return tf.estimator.EstimatorSpec(mode=mode,loss=loss,train_op=train_op,training_hooks=[accuracy_hook])
 
     if mode == tf.estimator.ModeKeys.PREDICT:
         print 'Mode is predict.'
         return tf.estimator.EstimatorSpec(mode=mode,predictions=predictions)
 
-    eval_metric_ops = {
-        "accuracy": tf.metrics.accuracy(labels=labels,predictions=predictions['classes']),
-        "F1_score": tf.metrics.recall(labels=labels,predictions=predictions['classes'])
-}
     return tf.estimator.EstimatorSpec(mode=mode,loss=loss,eval_metric_ops=eval_metric_ops)
 
 def main(args):
