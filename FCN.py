@@ -167,7 +167,7 @@ def fcn(features,labels,mode):
 
     try:    
         loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=final_conv)
-        accuracy_hook = tf.train.LoggingTensorHook({"Batch Accuracy": batch_accuracy(labels,predictions['classes']),"Delay Ratio": delay_transform(comp_layer,predictions['classes'])},every_n_iter=100)
+        accuracy_hook = tf.train.LoggingTensorHook({"Batch Accuracy": batch_accuracy(labels,predictions['classes'])},every_n_iter=100)
     except:
         pass
 
