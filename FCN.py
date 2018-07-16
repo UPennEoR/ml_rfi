@@ -148,9 +148,14 @@ def fcn(features,labels,mode):
     
     #7 1,1,4352
     # Transpose convolution (deconvolve)
-    upsamp = tf.layers.conv2d_transpose(slayer7,filters=2,kernel_size=[68,68],activation=activation)
 
-    final_conv = tf.reshape(upsamp,[-1,68*68,2])
+    upsamp1 = tf.layers.conv2d_transpose(slayer7,filters=1,kernel_size=[35,35],activation=activation)
+
+    upsamp2 = tf.layers.conv2d_transpose(upsamp1,filters=1,kernel_size=[18,18],activation=activation)
+
+    upsamp3 = tf.layers.conv2d_transpose(upsamp2,filters=2,kernel_size=[17,17],activation=activation)
+    
+    final_conv = tf.reshape(upsamp3,[-1,68*68,2])
 
     # Grab some output weight info for tensorboard
     #tf.summary.image('FullyConnected_stacked_layer5',tf.reshape(final_conv[0,:,:], [-1,60,64,2]))
@@ -162,17 +167,13 @@ def fcn(features,labels,mode):
 
     try:    
         loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=final_conv)
-        eval_metric_ops = {
-            "accuracy": tf.metrics.accuracy(labels=labels,predictions=predictions['classes']),
-            "F1_score": tf.metrics.recall(labels=labels,predictions=predictions['classes'])
-            }
+        accuracy_hook = tf.train.LoggingTensorHook({"Batch Accuracy": batch_accuracy(labels,predictions['classes']),"Delay Ratio": delay_transform(comp_layer,predictions['classes'])},every_n_iter=100)
     except:
         pass
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         print 'Mode is train.'
-        accuracy_hook = tf.train.LoggingTensorHook({"Batch Accuracy": batch_accuracy(labels,predictions['classes'])},every_n_iter=100)
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate=.0001)
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=.01)
         train_op = optimizer.minimize(loss=loss,global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec(mode=mode,loss=loss,train_op=train_op,training_hooks=[accuracy_hook])
 
@@ -180,12 +181,16 @@ def fcn(features,labels,mode):
         print 'Mode is predict.'
         return tf.estimator.EstimatorSpec(mode=mode,predictions=predictions)
 
+    eval_metric_ops = {
+        "accuracy": tf.metrics.accuracy(labels=labels,predictions=predictions['classes']),
+        "F1_score": tf.metrics.recall(labels=labels,predictions=predictions['classes'])
+}
     return tf.estimator.EstimatorSpec(mode=mode,loss=loss,eval_metric_ops=eval_metric_ops)
 
 def main(args):
     # load data
     f1 = h5py.File('RealVisRFI_v3.h5','r') # Load in a real dataset 
-    f2 = h5py.File('SimVisRFI_15_120_v3.h5','r') # Load in simulated data
+    f2 = h5py.File('RealVisRFI_v3.h5','r') # Load in simulated data
 
     train = True
     evaluate = True
@@ -195,8 +200,8 @@ def main(args):
     # but with only half of the real data. The remaining real data half will become
     # the evaluation dataset
     
-    f1_r = 100 #np.shape(f1['data'])[0]
-    f2_s = np.shape(f2['data'])[0]
+    f1_r = 900 #np.shape(f1['data'])[0]
+    f2_s = 900#np.shape(f2['data'])[0]
 
     print 'Size of real dataset: ',f1_r
     print ''
@@ -242,13 +247,13 @@ def main(args):
         test_labels = np.asarray(foldl(f1['flag'][rnd_ind,:,:],16), dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
 
     # create Estimator
-    rfiFCN = tf.estimator.Estimator(model_fn=fcn,model_dir='./checkpoint_Patch5')
+    rfiFCN = tf.estimator.Estimator(model_fn=fcn,model_dir='./checkpoint_NoDelay_X2')
 
     if train:
         train_input_fn = tf.estimator.inputs.numpy_input_fn(
             x={"x":train_data},
             y=train_labels,
-            batch_size=5,
+            batch_size=16,
             num_epochs=100,
             shuffle=True,
         )
@@ -257,7 +262,7 @@ def main(args):
         eval_input_fn = tf.estimator.inputs.numpy_input_fn(
             x={"x":eval_data},
             y=eval_labels,
-            num_epochs=10,
+            num_epochs=100,
             shuffle=True
         )	
 
