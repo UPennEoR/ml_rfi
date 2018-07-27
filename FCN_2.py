@@ -14,7 +14,7 @@ os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 # Training Params                                                                                                                                  
 num_steps = 10000
-batch_size = 16
+batch_size = 8
 pad_size = 68
 model_dir = np.sort(glob("./FCN/model_*"))
 try:
@@ -24,7 +24,7 @@ try:
 except:
     start_step = 0
     print('Starting training at step %i' % start_step)
-mode = 'train'
+mode = ''
 
 # Generator Network                                                                                                                               
 # Input: Noise, Output: Image                                                                                                                     
@@ -79,7 +79,7 @@ summary = tf.summary.merge_all()
 RFI_targets = tf.placeholder(tf.int32, shape=[None, pad_size*pad_size])
 
 loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=RFI_guess, labels=RFI_targets)
-optimizer_gen = tf.train.AdamOptimizer(learning_rate=0.01)
+optimizer_gen = tf.train.AdamOptimizer(learning_rate=0.0001)
 fcn_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='FCN')
 train_fcn = optimizer_gen.minimize(loss, var_list=fcn_vars)
 
@@ -134,17 +134,18 @@ with tf.Session() as sess:
                 acc = hf.batch_accuracy(batch_targets,tf.argmax(eval_class,axis=-1)).eval()
                 print('Batch accuracy %f' % acc)
     else:
-        batch_x, batch_targets = dset.random_test()
         time0 = time()
+        batch_x, batch_targets = dset.random_test(16*450)
         g = sess.run(RFI_guess, feed_dict={vis_input: batch_x})
-        print('Single baseline time: ',time() - time0)
-        
-        plt.subplot(211)
+        print('N=%i number of baselines time: ' % 450,time() - time0)
+
+        plt.subplot(311)
         plt.imshow(batch_x[0,:,:,0],aspect='auto')
+        plt.subplot(312)
+        plt.imshow(batch_targets[0,:].reshape(68,68),aspect='auto')
         plt.colorbar()
-        plt.text(512,30,tf.argmax(g,axis=1).eval())
-        plt.subplot(212)
-        plt.imshow(batch_x[0,:,:,1],aspect='auto')
+        plt.subplot(313)
+        plt.imshow(tf.reshape(tf.argmax(g[0,:,:],axis=1),[68,68]).eval(),aspect='auto')
         plt.colorbar()
         plt.savefig('VisClassify.pdf')
 

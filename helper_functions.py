@@ -129,7 +129,7 @@ class RFIDataset():
         f2 = h5py.File('SimVisRFI_15_120_v3.h5','r') # Load in simulated data
         #    f2 = h5py.File('RealVisRFI_v3.h5','r')
 
-        psize = 68 # Pixel pad size for individual carved bands
+        self.psize = 68 # Pixel pad size for individual carved bands
         fcarve = 16 # Carving narrowband factor
 
         # We want to augment our training dataset with the entirety of the simulated data
@@ -150,28 +150,28 @@ class RFIDataset():
         #    samples = [rnd_ind]
         time0 = time()
     
-        f_real = np.array(map(fold,f1['data'][:f1_r,:,:])).reshape(-1,psize,psize,2)
-        f_real_labels = np.array(map(foldl,f1['flag'][:f1_r,:,:])).reshape(-1,psize,psize)
+        f_real = np.array(map(fold,f1['data'][:f1_r,:,:])).reshape(-1,self.psize,self.psize,2)
+        f_real_labels = np.array(map(foldl,f1['flag'][:f1_r,:,:])).reshape(-1,self.psize,self.psize)
         print 'Training dataset loaded.'
         print 'Training dataset size: ',np.shape(f_real)
         # Cut up sim dataset and labels
-        f_sim = np.array(map(fold,f2['data'][:f2_s,:,:])).reshape(-1,psize,psize,2)
-        f_sim_labels = np.array(map(foldl,f2['flag'][:f2_s,:,:])).reshape(-1,psize,psize)
+        f_sim = np.array(map(fold,f2['data'][:f2_s,:,:])).reshape(-1,self.psize,self.psize,2)
+        f_sim_labels = np.array(map(foldl,f2['flag'][:f2_s,:,:])).reshape(-1,self.psize,self.psize)
         print 'Simulated training dataset loaded.'
         print 'Training dataset size: ',np.shape(f_sim)
         real_sh = np.shape(f_real)
 
         # Format evaluation dataset
-        self.eval_data = np.asarray(f_real[:,:,:,:],dtype=np.complex64)
+        self.eval_data = np.asarray(f_real[:,:,:,:],dtype=np.float64)
         self.eval_labels = np.asarray(f_real_labels[:,:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
         eval1 = np.shape(self.eval_data)[0]
         
         # Format training dataset
-        self.train_data = np.asarray(f_sim,dtype=np.complex64)#np.asarray(np.vstack((f_sim,f_real[:real_sh[0]/2,:,:,:])),dtype=np.float32)
-        self.train_labels = np.asarray(np.logical_not(f_sim_labels),dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])#np.asarray(np.vstack((f_sim_labels,f_real_labels[:real_sh[0]/2,:,:])),dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
+        self.train_data = np.asarray(f_sim,dtype=np.float64)#np.asarray(np.vstack((f_sim,f_real[:real_sh[0]/2,:,:,:])),dtype=np.float32)
+        self.train_labels = np.asarray(f_sim_labels,dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])#np.asarray(np.vstack((f_sim_labels,f_real_labels[:real_sh[0]/2,:,:])),dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
 
         train0 = np.shape(self.train_data)[0]
-        self.test_data = np.asarray(fold(f1['data'][rnd_ind,:,:],fcarve), dtype=np.complex64) # Random real visibility for testing
+        self.test_data = np.asarray(fold(f1['data'][rnd_ind,:,:],fcarve), dtype=np.float64) # Random real visibility for testing
         self.test_labels = np.asarray(foldl(f1['flag'][rnd_ind,:,:],fcarve), dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
 
     def next_train(self):
@@ -184,6 +184,6 @@ class RFIDataset():
         self.eval_labels = np.roll(self.eval_labels,self.batch_size,axis=0)
         return self.eval_data[:self.batch_size,:,:,:],self.eval_labels[:self.batch_size,:]
 
-    def random_test(self):
-        ind = np.random.randint(0,np.shape(self.eval_data))
-        return self.eval_data[ind,:,:,:],self.eval_labels[ind,:]
+    def random_test(self,samples):
+        ind = np.random.randint(0,np.shape(self.eval_data)[0],size=samples)
+        return self.eval_data[ind,:,:,:].reshape(samples,self.psize,self.psize,2),self.eval_labels[ind,:].reshape(samples,self.psize*self.psize)
