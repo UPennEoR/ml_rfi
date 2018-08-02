@@ -30,6 +30,7 @@ def foldl(data,ch_fold=16):
     return _DATApad
 
 def pad(data,padding=2):
+    #for 68 pad with 2
     sh = np.shape(data)
     t_pad = (sh[1] - sh[0])/2
     data_pad = np.pad(data,pad_width=((t_pad+padding,t_pad+padding),(padding,padding)),mode='reflect')
@@ -64,7 +65,7 @@ def unfoldl(data_fold,nchans=1024):
     _data = data_.reshape(ch_fold*dfreqs,ntimes).T
     return _data
 
-def stacked_layer(input_layer,num_filter_layers,kt,kf,activation,stride,pool,bnorm=True,name='None'):
+def stacked_layer(input_layer,num_filter_layers,kt,kf,activation,stride,pool,bnorm=True,name='None',dropout=False):
     """
     Creates a 3x stacked layer of convolutional layers. Each layer uses the same kernel size.
     Batch normalized output is default and recommended for faster convergence, although
@@ -75,13 +76,19 @@ def stacked_layer(input_layer,num_filter_layers,kt,kf,activation,stride,pool,bno
                              kernel_size=[kt,kf],
                              padding="same",
                              activation=activation)
-    
-    convb = tf.layers.conv2d(inputs=conva,
+    if not dropout:
+        convb = tf.layers.conv2d(inputs=conva,
                              filters=num_filter_layers,
                              kernel_size=[kt,kf],
                              padding="same",
                              activation=activation)
-
+    else:
+        convb = tf.layers.dropout(tf.layers.conv2d(inputs=conva,
+                             filters=num_filter_layers,
+                             kernel_size=[kt,kf],
+                             padding="same",
+                             activation=activation),rate=.3)
+        
     convc = tf.layers.conv2d(inputs=convb,
                              filters=num_filter_layers,
                              kernel_size=[kt,kf],
@@ -104,6 +111,15 @@ def batch_accuracy(labels,predictions):
     total = tf.reduce_sum(labels)
     return tf.divide(correct,total)
 
+def accuracy(labels,predictions):
+    correct = 1.*np.sum((labels+predictions)==2)
+    total = 1.*np.sum(labels==1)
+    print(total)
+    try:
+        return correct/total
+    except:
+        return 1.
+    
 def delay_transform(data,flags):
     sh = data.get_shape().as_list()
     data = tf.reshape(data,[-1,sh[1],sh[1],1])
@@ -121,7 +137,7 @@ class RFIDataset():
     def __init__(self):
         print('Welcome to the HERA RFI training and evaluation dataset.')
 
-    def load(self,batch_size):
+    def load(self,batch_size,psize,hybrid=False):
         # load data
         self.batch_size = batch_size
         print('A batch size of %i has been set.' % self.batch_size)
@@ -129,7 +145,7 @@ class RFIDataset():
         f2 = h5py.File('SimVisRFI_15_120_v3.h5','r') # Load in simulated data
         #    f2 = h5py.File('RealVisRFI_v3.h5','r')
 
-        self.psize = 68 # Pixel pad size for individual carved bands
+        self.psize = psize # Pixel pad size for individual carved bands
         fcarve = 16 # Carving narrowband factor
 
         # We want to augment our training dataset with the entirety of the simulated data
@@ -161,18 +177,36 @@ class RFIDataset():
         print 'Training dataset size: ',np.shape(f_sim)
         real_sh = np.shape(f_real)
 
-        # Format evaluation dataset
-        self.eval_data = np.asarray(f_real[:,:,:,:],dtype=np.float64)
-        self.eval_labels = np.asarray(f_real_labels[:,:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
-        eval1 = np.shape(self.eval_data)[0]
-        
-        # Format training dataset
-        self.train_data = np.asarray(f_sim,dtype=np.float64)#np.asarray(np.vstack((f_sim,f_real[:real_sh[0]/2,:,:,:])),dtype=np.float32)
-        self.train_labels = np.asarray(f_sim_labels,dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])#np.asarray(np.vstack((f_sim_labels,f_real_labels[:real_sh[0]/2,:,:])),dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
+        if hybrid:
+            print('Hybrid training dataset selected.')
+            # We want to mix the real and simulated datasets
+            # and then keep some real datasets for evaluation
+            real_len = np.shape(f_real)[0]
+            self.eval_data = np.asarray(f_real[:int(real_len/2),:,:,:],dtype=np.float64)
+            self.eval_labels = np.asarray(f_real_labels[:int(real_len/2),:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
+            
+            train_data = np.vstack((f_real[int(real_len/2):,:,:,:],f_sim))
+            train_labels = np.vstack((f_real_labels[int(real_len/2):,:,:],f_sim_labels))
+            hybrid_len = np.shape(train_data)[0]
+            mix_ind = np.random.permutation(hybrid_len)
 
-        train0 = np.shape(self.train_data)[0]
-        self.test_data = np.asarray(fold(f1['data'][rnd_ind,:,:],fcarve), dtype=np.float64) # Random real visibility for testing
-        self.test_labels = np.asarray(foldl(f1['flag'][rnd_ind,:,:],fcarve), dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
+            self.train_data = train_data[mix_ind,:,:,:]
+            self.train_labels = train_labels[mix_ind,:,:].reshape(-1,real_sh[1]*real_sh[2])
+        else:
+            # Format evaluation dataset
+            self.eval_data = np.asarray(f_real[:,:,:,:],dtype=np.float64)
+            self.eval_labels = np.asarray(f_real_labels[:,:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
+            eval1 = np.shape(self.eval_data)[0]
+
+            # Format training dataset
+            #self.train_data = np.asarray(f_real[:700,:,:,:],dtype=np.float64)
+            #self.train_labels = np.asarray(f_real_labels[:700,:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
+            self.train_data = np.asarray(f_sim,dtype=np.float64)#np.asarray(np.vstack((f_sim,f_real[:real_sh[0]/2,:,:,:])),dtype=np.float32)
+            self.train_labels = np.asarray(f_sim_labels,dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])#np.asarray(np.vstack((f_sim_labels,f_real_labels[:real_sh[0]/2,:,:])),dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
+
+            train0 = np.shape(self.train_data)[0]
+            self.test_data = np.asarray(fold(f1['data'][rnd_ind,:,:],fcarve), dtype=np.float64) # Random real visibility for testing
+            self.test_labels = np.asarray(foldl(f1['flag'][rnd_ind,:,:],fcarve), dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
 
     def next_train(self):
         self.train_data = np.roll(self.train_data,self.batch_size,axis=0)
@@ -187,3 +221,5 @@ class RFIDataset():
     def random_test(self,samples):
         ind = np.random.randint(0,np.shape(self.eval_data)[0],size=samples)
         return self.eval_data[ind,:,:,:].reshape(samples,self.psize,self.psize,2),self.eval_labels[ind,:].reshape(samples,self.psize*self.psize)
+
+    
