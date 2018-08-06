@@ -13,10 +13,13 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 # Training Params                                                                                                                                 
-model_name = 'SimTrain_1minusf1'
-num_steps = 100000
+model_name = 'AmpPhs'
+chtypes='AmpPhs'
+num_steps = 10000
 batch_size = 64
 pad_size = 68
+ch_input = 2
+mode = 'eval'
 model_dir = np.sort(glob("./"+model_name+"/model_*"))
 try:
     model = model_dir[-1].split('/')[-1].split('.')[0]+'.ckpt'
@@ -25,7 +28,6 @@ try:
 except:
     start_step = 0
     print('Starting training at step %i' % start_step)
-mode = 'train'
 
 # Generator Network                                                                                                                               
 # Input: Noise, Output: Image                                                                                                                     
@@ -37,7 +39,7 @@ def FCN(x, reuse=None):
         s = 1
         activation = tf.nn.relu
         sh = x.get_shape().as_list()
-        input_layer = tf.cast(tf.reshape(x,[-1,sh[1],sh[2],2]),dtype=tf.float32)
+        input_layer = tf.cast(tf.reshape(x,[-1,sh[1],sh[2],sh[3]]),dtype=tf.float32)
 
         # Convolution / Downsampling layers
         slayer1 = hf.stacked_layer(input_layer,s*16,kt,kf,activation,[4,4],[4,4],bnorm=True)
@@ -53,9 +55,9 @@ def FCN(x, reuse=None):
 #        slayer6 = hf.stacked_layer(slayer5,s*512,1,1,activation,[2,2],[2,2],bnorm=True)
 
         # Fully connected and convolutional layers
-        slayer7 = hf.stacked_layer(slayer5,s*2048,1,1,activation,[1,1],[1,1],bnorm=True)
+        slayer7 = hf.stacked_layer(slayer5,s*2048,1,1,activation,[1,1],[1,1],bnorm=True,dropout=True)
 #        slayer7 = tf.layers.dropout(hf.stacked_layer(slayer5,s*2048,1,1,activation,[1,1],[1,1],bnorm=False),rate=0.5,training=True)
-        slayer8 = hf.stacked_layer(slayer7,s*2048,1,1,activation,[1,1],[1,1],bnorm=True)
+        slayer8 = hf.stacked_layer(slayer7,s*2048,1,1,activation,[1,1],[1,1],bnorm=True,dropout=True)
 
         # Transpose convolution layers
         upsamp1 = tf.layers.conv2d_transpose(slayer8,filters=1,kernel_size=[s4sh[1],s4sh[1]],activation=activation)
@@ -80,7 +82,7 @@ def FCN(x, reuse=None):
 
 # Build Networks                                                                                                                                  
 # Network Inputs                                                                                                                                  
-vis_input = tf.placeholder(tf.float32, shape=[None, pad_size, pad_size, 2]) #this is a waterfall amp/phs visibility                               
+vis_input = tf.placeholder(tf.float32, shape=[None, pad_size, pad_size, ch_input]) #this is a waterfall amp/phs/comp visibility                               
 
 # Build Generator Network                                                                                                                         
 RFI_guess = FCN(vis_input)
@@ -90,14 +92,18 @@ RFI_guess = FCN(vis_input)
 RFI_targets = tf.placeholder(tf.int32, shape=[None, pad_size*pad_size])
 learn_rate = tf.placeholder(tf.float32, shape=[1])
 
-recall = tf.metrics.recall(labels=RFI_targets,predictions=tf.argmax(RFI_guess,axis=-1))
-precision = tf.metrics.precision(labels=RFI_targets,predictions=tf.argmax(RFI_guess,axis=-1))
-batch_accuracy = hf.batch_accuracy(RFI_targets,tf.argmax(RFI_guess,axis=-1))
+hthresh = hf.hard_thresh(RFI_guess)
+argmax = tf.argmax(RFI_guess,axis=-1)
+
+recall = tf.metrics.recall(labels=RFI_targets,predictions=argmax)
+precision = tf.metrics.precision(labels=RFI_targets,predictions=argmax)
+batch_accuracy = hf.batch_accuracy(RFI_targets,argmax)
 #accuracy = tf.metrics.accuracy(labels=RFI_targets,predictions=tf.argmax(RFI_guess,axis=-1))
 f1 = 2.*precision[0]*recall[0]/(precision[0]+recall[0])
 f1 = tf.where(tf.is_nan(f1),tf.ones_like(f1),f1)
 #loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=RFI_targets,logits=RFI_guess)) + 100.*(1-f1)
-loss = tf.reduce_mean(tf.losses.sparse_softmax_cross_entropy(labels=RFI_targets,logits=RFI_guess,weights=1.-f1))
+loss = tf.losses.sparse_softmax_cross_entropy(labels=RFI_targets,logits=RFI_guess)
+
 tf.summary.scalar('loss',loss)
 tf.summary.scalar('recall',recall[0])
 tf.summary.scalar('precision',precision[0])
@@ -118,11 +124,11 @@ saver = tf.train.Saver()
 
 # Load dataset
 dset = hf.RFIDataset()
-dset.load(batch_size,pad_size,hybrid=False)
+dset.load(batch_size,pad_size,hybrid=False,chtypes=chtypes)
 
 with tf.Session() as sess:
 
-    summary_writer = tf.summary.FileWriter('./'+model_name+'/',sess.graph)
+    
     # Run the initializer                                                                                                                         
     sess.run(init)
     #check to see if model exists                                                                                                                 
@@ -133,7 +139,8 @@ with tf.Session() as sess:
     else:
         print('No Model Found.')
     if mode == 'train':
-        lr = np.array([0.1])
+        train_writer = tf.summary.FileWriter('./'+model_name+'_train_summ/',sess.graph)
+        lr = np.array([0.01])
         for i in range(start_step, start_step+num_steps+1):
             # Prepare Input Data                                                                                                                  
             batch_x, batch_targets = dset.next_train()
@@ -144,31 +151,37 @@ with tf.Session() as sess:
             #s1 = sess.run(s1image, feed_dict=feed_dict)
             #up3 = sess.run(up3image, feed_dict=feed_dict)
             if i % 20 == 0:
-                summary_writer.add_summary(s1,i)
-                summary_writer.flush()
+                train_writer.add_summary(s1,i)
+                train_writer.flush()
                 #summary_writer.add_summary(up3,i)
             if i % 100 == 0 or i == 1:
                 print('Step %i: RFI Crushinator Loss: %.9f' % (i, np.mean(loss_)))
                 print('Recall : %.9f' % rec[0])
                 print('Precision : %.9f' % pre[0])
                 print('F1 : %.9f' % f1_)
-            if i % 10000 == 0 and i != 0:
+            if i % 1000 == 0 and i != 0:
                 print('Saving model...')
                 save_path = saver.save(sess,'./'+model_name+'/model_%i.ckpt' % i)
-                lr *= 0.1
+                #lr *= 0.1
                 print('Learning rate decreased to %f.' % lr)
                 
     elif mode == 'eval':
+        eval_writer = tf.summary.FileWriter('./'+model_name+'_eval_summ/',sess.graph)
         for i in range(1, num_steps+1):
             batch_x, batch_targets = dset.next_eval()
             feed_dict = {vis_input: batch_x, RFI_targets: batch_targets}
-            eval_class,rec,pre,f1_ = sess.run([RFI_guess,recall,precision,f1],feed_dict=feed_dict)
+            eval_class,rec,pre,f1_,s1 = sess.run([RFI_guess,recall,precision,f1,summary],feed_dict=feed_dict)
             if i % 10 == 0:
                 if 'acc' not in globals():
                     acc = 0.
                 print('F1 %f' % f1_)
                 acc = hf.batch_accuracy(batch_targets,tf.argmax(eval_class,axis=-1)).eval()
                 print('Batch accuracy %f' % acc)
+            if i % 20 == 0:
+                eval_writer.add_summary(s1,i)
+                eval_writer.flush()
+            #if i % 1000 == 0:
+            #    save_path = saver.save(sess,'./'+model_name+'_eval'+'/model_%i.ckpt' % i)
     else:
         time0 = time()
         ind = 0

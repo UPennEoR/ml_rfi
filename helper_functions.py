@@ -124,12 +124,20 @@ def delay_transform(data,flags):
     sh = data.get_shape().as_list()
     data = tf.reshape(data,[-1,sh[1],sh[1],1])
     flags = tf.cast(tf.reshape(flags,[-1,sh[1],sh[1],1]),dtype=tf.complex64)
+    flags_comp = tf.add(flags,1j*flags)
+    #flags = tf.cast(flags_comp,dtype=tf.complex64)
     #flags_ = tf.cast(tf.logical_not(tf.cast(flags,dtype=tf.bool)),dtype=tf.complex64)
-    data_ = tf.transpose(tf.multiply(data,flags),perm=[2,1,0,3])
-    DATA_ = tf.abs(tf.fft2d(data_))
+    data_noflags = tf.transpose(data,perm=[2,1,0,3])
+    DATA_noflags_ = tf.abs(tf.fft(data_noflags))
+    DATA_noflags = tf.transpose(DATA_noflags_,perm=[2,1,0,3])
+    data_ = tf.transpose(tf.multiply(data,flags_comp),perm=[2,1,0,3])
+    DATA_ = tf.abs(tf.fft(data_))
     DATA = tf.transpose(DATA_,perm=[2,1,0,3])
-    return DATA
+    return tf.reduce_mean(tf.divide(DATA,DATA_noflags)[:,:,:,:])
 
+def hard_thresh(layer,thresh=1e-2):
+    layer = layer[:,:,1]
+    return tf.where(layer > thresh,tf.ones_like(layer),tf.zeros_like(layer))
 
 #def load_data():
 
@@ -137,12 +145,12 @@ class RFIDataset():
     def __init__(self):
         print('Welcome to the HERA RFI training and evaluation dataset.')
 
-    def load(self,batch_size,psize,hybrid=False):
+    def load(self,batch_size,psize,hybrid=False,chtypes='AmpPhs'):
         # load data
         self.batch_size = batch_size
         print('A batch size of %i has been set.' % self.batch_size)
         f1 = h5py.File('RealVisRFI_v3.h5','r') # Load in a real dataset 
-        f2 = h5py.File('SimVisRFI_15_120_v3.h5','r') # Load in simulated data
+        f2 = h5py.File('SimVisRFI_15_120_v4.h5','r') # Load in simulated data
         #    f2 = h5py.File('RealVisRFI_v3.h5','r')
 
         self.psize = psize # Pixel pad size for individual carved bands
@@ -165,28 +173,54 @@ class RFIDataset():
         #    rnd_ind = 100#np.random.randint(0,f1_r)
         #    samples = [rnd_ind]
         time0 = time()
-    
-        f_real = np.array(map(fold,f1['data'][:f1_r,:,:])).reshape(-1,self.psize,self.psize,2)
-        f_real_labels = np.array(map(foldl,f1['flag'][:f1_r,:,:])).reshape(-1,self.psize,self.psize)
+
+        if chtypes ==  'AmpPhs':
+            f_real = (np.array(map(fold,f1['data'][:f1_r,:,:]))[:,:,:,:,:2]).reshape(-1,self.psize,self.psize,2)
+            f_real_labels = np.array(map(foldl,f1['flag'][:f1_r,:,:])).reshape(-1,self.psize,self.psize)
+            # Cut up sim dataset and labels
+            f_sim = (np.array(map(fold,f2['data'][:f2_s,:,:]))[:,:,:,:,:2]).reshape(-1,self.psize,self.psize,2)
+            f_sim_labels = np.array(map(foldl,f2['flag'][:f2_s,:,:])).reshape(-1,self.psize,self.psize)
+        elif chtypes == 'AmpPhsCmp' :
+            f_real = np.array(map(fold,f1['data'][:f1_r,:,:])).reshape(-1,self.psize,self.psize,3)
+            f_real_labels = np.array(map(foldl,f1['flag'][:f1_r,:,:])).reshape(-1,self.psize,self.psize)
+            # Cut up sim dataset and labels
+            f_sim = np.array(map(fold,f2['data'][:f2_s,:,:])).reshape(-1,self.psize,self.psize,3)
+            f_sim_labels = np.array(map(foldl,f2['flag'][:f2_s,:,:])).reshape(-1,self.psize,self.psize)
+        elif chtypes == 'Amp':
+            f_real = (np.array(map(fold,f1['data'][:f1_r,:,:]))[:,:,:,:,0]).reshape(-1,self.psize,self.psize,1)
+            print('f_real: ',np.shape(f_real))
+            f_real_labels = np.array(map(foldl,f1['flag'][:f1_r,:,:])).reshape(-1,self.psize,self.psize)
+            f_sim = (np.array(map(fold,f2['data'][:f2_s,:,:]))[:,:,:,:,0]).reshape(-1,self.psize,self.psize,1)
+            f_sim_labels = np.array(map(foldl,f2['flag'][:f2_s,:,:])).reshape(-1,self.psize,self.psize)
+        elif chtypes == 'Phs':
+            f_real = (np.array(map(fold,f1['data'][:f1_r,:,:])).reshape(-1,self.psize,self.psize,1))
+            f_real_labels = np.array(map(foldl,f1['flag'][:f1_r,:,:])).reshape(-1,self.psize,self.psize)
+            f_sim = (np.array(map(fold,f2['data'][:f2_s,:,:])).reshape(-1,self.psize,self.psize,1))
+            f_sim_labels = np.array(map(foldl,f2['flag'][:f2_s,:,:])).reshape(-1,self.psize,self.psize)
+            
         print 'Training dataset loaded.'
         print 'Training dataset size: ',np.shape(f_real)
-        # Cut up sim dataset and labels
-        f_sim = np.array(map(fold,f2['data'][:f2_s,:,:])).reshape(-1,self.psize,self.psize,2)
-        f_sim_labels = np.array(map(foldl,f2['flag'][:f2_s,:,:])).reshape(-1,self.psize,self.psize)
+
         print 'Simulated training dataset loaded.'
         print 'Training dataset size: ',np.shape(f_sim)
+        
         real_sh = np.shape(f_real)
 
+        if chtypes == 'AmpPhsCmp':
+            d_type = np.complex64
+        else:
+            d_type = np.float32
+        
         if hybrid:
             print('Hybrid training dataset selected.')
             # We want to mix the real and simulated datasets
             # and then keep some real datasets for evaluation
             real_len = np.shape(f_real)[0]
-            self.eval_data = np.asarray(f_real[:int(real_len/2),:,:,:],dtype=np.float64)
+            self.eval_data = np.asarray(f_real[:int(real_len/2),:,:,:],dtype=d_type)
             self.eval_labels = np.asarray(f_real_labels[:int(real_len/2),:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
             
-            train_data = np.vstack((f_real[int(real_len/2):,:,:,:],f_sim))
-            train_labels = np.vstack((f_real_labels[int(real_len/2):,:,:],f_sim_labels))
+            train_data = np.vstack((f_real[int(real_len/2):,:,:,:],f_sim),axis=-1)
+            train_labels = np.vstack((f_real_labels[int(real_len/2):,:,:],f_sim_labels),axis=-1)
             hybrid_len = np.shape(train_data)[0]
             mix_ind = np.random.permutation(hybrid_len)
 
@@ -194,18 +228,19 @@ class RFIDataset():
             self.train_labels = train_labels[mix_ind,:,:].reshape(-1,real_sh[1]*real_sh[2])
         else:
             # Format evaluation dataset
-            self.eval_data = np.asarray(f_real[:,:,:,:],dtype=np.float64)
-            self.eval_labels = np.asarray(f_real_labels[:,:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
+            sim_len = np.shape(f_sim)[0]
+            self.eval_data = np.asarray(f_sim[:sim_len/2,:,:,:],dtype=d_type)
+            self.eval_labels = np.asarray(f_sim_labels[:sim_len/2,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
             eval1 = np.shape(self.eval_data)[0]
 
             # Format training dataset
             #self.train_data = np.asarray(f_real[:700,:,:,:],dtype=np.float64)
             #self.train_labels = np.asarray(f_real_labels[:700,:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
-            self.train_data = np.asarray(f_sim,dtype=np.float64)#np.asarray(np.vstack((f_sim,f_real[:real_sh[0]/2,:,:,:])),dtype=np.float32)
-            self.train_labels = np.asarray(f_sim_labels,dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])#np.asarray(np.vstack((f_sim_labels,f_real_labels[:real_sh[0]/2,:,:])),dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
+            self.train_data = np.asarray(f_sim[sim_len/2:,:,:,:],dtype=d_type)#np.asarray(np.vstack((f_sim,f_real[:real_sh[0]/2,:,:,:])),dtype=np.float32)
+            self.train_labels = np.asarray(f_sim_labels[sim_len/2:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])#np.asarray(np.vstack((f_sim_labels,f_real_labels[:real_sh[0]/2,:,:])),dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
 
             train0 = np.shape(self.train_data)[0]
-            self.test_data = np.asarray(fold(f1['data'][rnd_ind,:,:],fcarve), dtype=np.float64) # Random real visibility for testing
+            self.test_data = np.asarray(fold(f1['data'][rnd_ind,:,:],fcarve), dtype=d_type) # Random real visibility for testing
             self.test_labels = np.asarray(foldl(f1['flag'][rnd_ind,:,:],fcarve), dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
 
     def next_train(self):
