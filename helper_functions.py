@@ -4,7 +4,6 @@ import h5py
 from time import time
 import os
 
-
 def transpose(X):
     """
     Transpose for use in the map functions.
