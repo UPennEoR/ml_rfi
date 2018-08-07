@@ -13,13 +13,13 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 # Training Params                                                                                                                                 
-model_name = 'AmpPhs'
+model_name = 'AmpPhsELU'
 chtypes='AmpPhs'
-num_steps = 10000
+num_steps = 1001
 batch_size = 64
 pad_size = 68
 ch_input = 2
-mode = 'eval'
+mode = 'train'
 model_dir = np.sort(glob("./"+model_name+"/model_*"))
 try:
     model = model_dir[-1].split('/')[-1].split('.')[0]+'.ckpt'
@@ -37,45 +37,43 @@ def FCN(x, reuse=None):
         kt = 3
         kf = 3
         s = 1
-        activation = tf.nn.relu
+        activation = tf.nn.elu
         sh = x.get_shape().as_list()
         input_layer = tf.cast(tf.reshape(x,[-1,sh[1],sh[2],sh[3]]),dtype=tf.float32)
 
         # Convolution / Downsampling layers
-        slayer1 = hf.stacked_layer(input_layer,s*16,kt,kf,activation,[4,4],[4,4],bnorm=True)
+        slayer1 = hf.stacked_layer(input_layer,s*16,kt,kf,activation,[2,2],[2,2],bnorm=True)
         s1sh = slayer1.get_shape().as_list()
         print(s1sh)
-        tf.summary.image('Slayer_1',tf.reshape(tf.reduce_sum(slayer1[0,:,:,:],axis=-1),[1,17,17,1]))
-        slayer2 = hf.stacked_layer(slayer1,s*32,kt,kf,activation,[4,4],[4,4],bnorm=True)
-#        slayer3 = hf.stacked_layer(slayer2,s*64,kt,kf,activation,[2,2],[2,2],bnorm=True)
-        slayer4 = hf.stacked_layer(slayer2,s*64,kt,kf,activation,[2,2],[2,2],bnorm=True)
-        s4sh = slayer4.get_shape().as_list()
-        slayer5 = hf.stacked_layer(slayer4,s*128,1,1,activation,[2,2],[2,2],bnorm=True)
-#        slayer5 = tf.layers.dropout(hf.stacked_layer(slayer4,s*128,1,1,activation,[2,2],[2,2],bnorm=True),rate=0.5,training=True)
-#        slayer6 = hf.stacked_layer(slayer5,s*512,1,1,activation,[2,2],[2,2],bnorm=True)
-
+        tf.summary.image('Slayer_1',tf.reshape(tf.reduce_sum(slayer1[0,:,:,:],axis=-1),[1,34,34,1]))
+        slayer2 = hf.stacked_layer(slayer1,s*32,kt,kf,activation,[2,2],[2,2],bnorm=True)
+        slayer3 = hf.stacked_layer(slayer2,s*64,kt,kf,activation,[2,2],[2,2],bnorm=True)
+        s3sh = slayer3.get_shape().as_list()
+        slayer4 = hf.stacked_layer(slayer3,s*128,1,1,activation,[2,2],[2,2],bnorm=True)
+        slayer5 = hf.stacked_layer(slayer4,s*512,1,1,activation,[2,2],[2,2],bnorm=True)
+        slayer6 = hf.stacked_layer(slayer5,s*1024,1,1,activation,[2,2],[2,2],bnorm=True)
+        
         # Fully connected and convolutional layers
-        slayer7 = hf.stacked_layer(slayer5,s*2048,1,1,activation,[1,1],[1,1],bnorm=True,dropout=True)
-#        slayer7 = tf.layers.dropout(hf.stacked_layer(slayer5,s*2048,1,1,activation,[1,1],[1,1],bnorm=False),rate=0.5,training=True)
-        slayer8 = hf.stacked_layer(slayer7,s*2048,1,1,activation,[1,1],[1,1],bnorm=True,dropout=True)
-
+        slayer7 = hf.stacked_layer(slayer6,s*2048,1,1,activation,[1,1],[1,1],bnorm=True,dropout=False)
+        slayer8 = hf.stacked_layer(slayer7,s*2048,1,1,activation,[1,1],[1,1],bnorm=True,dropout=False)
+        
         # Transpose convolution layers
-        upsamp1 = tf.layers.conv2d_transpose(slayer8,filters=1,kernel_size=[s4sh[1],s4sh[1]],activation=activation)
-        upsamp1 = tf.add(upsamp1,tf.reshape(tf.reduce_max(slayer4,axis=-1),[-1,s4sh[1],s4sh[1],1]))
-        print('upsamp1 ',np.shape(upsamp1))
+        upsamp1 = tf.layers.conv2d_transpose(slayer8,filters=1,kernel_size=[s3sh[1],s3sh[1]],activation=activation)
+        upsamp1 = tf.add(upsamp1,tf.reshape(tf.reduce_max(slayer3,axis=-1),[-1,s3sh[1],s3sh[1],1]))
+
         upsamp1 = tf.contrib.layers.batch_norm(upsamp1,scale=True)
-        upsamp2 = tf.layers.conv2d_transpose(upsamp1,filters=1,kernel_size=[s4sh[1]+1,s4sh[1]+1],activation=activation)
-        print('upsamp2 ',np.shape(upsamp2))
+        upsamp2 = tf.layers.conv2d_transpose(upsamp1,filters=1,kernel_size=[s3sh[1]+1,s3sh[1]+1],activation=activation)
+
         upsamp2 = tf.contrib.layers.batch_norm(upsamp2,scale=True)
-        upsamp3 = tf.layers.conv2d_transpose(upsamp2,filters=1,kernel_size=[s1sh[1]-2*s4sh[1]+1,s1sh[1]-2*s4sh[1]+1],activation=activation)
+        upsamp3 = tf.layers.conv2d_transpose(upsamp2,filters=1,kernel_size=[s1sh[1]-2*s3sh[1]+1,s1sh[1]-2*s3sh[1]+1],activation=activation)
         upsamp3 = tf.add(upsamp3,tf.reshape(tf.reduce_max(slayer1,axis=-1),[-1,s1sh[1],s1sh[1],1]))
         upsh3 = upsamp3.get_shape().as_list()
-        tf.summary.image('Upsamp_3',tf.reshape(upsamp3[0,:,:,:],[1,17,17,1]))
-        print('upsamp3 ',np.shape(upsamp3))
+        tf.summary.image('Upsamp_3',tf.reshape(upsamp3[0,:,:,:],[1,34,34,1]))
+
         upsamp3 = tf.contrib.layers.batch_norm(upsamp3,scale=True)
         upsamp4 = tf.layers.conv2d_transpose(upsamp3,filters=2,kernel_size=[int(sh[1] - upsh3[1]) + 1,int(sh[1] - upsh3[1]) + 1],activation=activation)
         upsamp4 = tf.contrib.layers.batch_norm(upsamp4,scale=True)
-        print('upsamp4 ',np.shape(upsamp4))
+
         final_conv = tf.reshape(upsamp4,[-1,sh[1]*sh[1],2])
         
     return final_conv
@@ -139,8 +137,8 @@ with tf.Session() as sess:
     else:
         print('No Model Found.')
     if mode == 'train':
-        train_writer = tf.summary.FileWriter('./'+model_name+'_train_summ/',sess.graph)
-        lr = np.array([0.01])
+        train_writer = tf.summary.FileWriter('./'+model_name+'_train/',sess.graph)
+        lr = np.array([0.1])
         for i in range(start_step, start_step+num_steps+1):
             # Prepare Input Data                                                                                                                  
             batch_x, batch_targets = dset.next_train()
@@ -166,7 +164,7 @@ with tf.Session() as sess:
                 print('Learning rate decreased to %f.' % lr)
                 
     elif mode == 'eval':
-        eval_writer = tf.summary.FileWriter('./'+model_name+'_eval_summ/',sess.graph)
+        eval_writer = tf.summary.FileWriter('./'+model_name+'_eval/',sess.graph)
         for i in range(1, num_steps+1):
             batch_x, batch_targets = dset.next_eval()
             feed_dict = {vis_input: batch_x, RFI_targets: batch_targets}
