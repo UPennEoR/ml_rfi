@@ -13,13 +13,13 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 # Training Params                                                                                                                                 
-model_name = 'AmpPhsELU'
+model_name = 'AmpPhsRELU'
 chtypes='AmpPhs'
-num_steps = 1001
+num_steps = 10000
 batch_size = 64
 pad_size = 68
 ch_input = 2
-mode = 'train'
+mode = ''
 model_dir = np.sort(glob("./"+model_name+"/model_*"))
 try:
     model = model_dir[-1].split('/')[-1].split('.')[0]+'.ckpt'
@@ -37,10 +37,10 @@ def FCN(x, reuse=None):
         kt = 3
         kf = 3
         s = 1
-        activation = tf.nn.elu
+        activation = tf.nn.leaky_relu
         sh = x.get_shape().as_list()
         input_layer = tf.cast(tf.reshape(x,[-1,sh[1],sh[2],sh[3]]),dtype=tf.float32)
-
+        
         # Convolution / Downsampling layers
         slayer1 = hf.stacked_layer(input_layer,s*16,kt,kf,activation,[2,2],[2,2],bnorm=True)
         s1sh = slayer1.get_shape().as_list()
@@ -49,26 +49,27 @@ def FCN(x, reuse=None):
         slayer2 = hf.stacked_layer(slayer1,s*32,kt,kf,activation,[2,2],[2,2],bnorm=True)
         slayer3 = hf.stacked_layer(slayer2,s*64,kt,kf,activation,[2,2],[2,2],bnorm=True)
         s3sh = slayer3.get_shape().as_list()
-        slayer4 = hf.stacked_layer(slayer3,s*128,1,1,activation,[2,2],[2,2],bnorm=True)
-        slayer5 = hf.stacked_layer(slayer4,s*512,1,1,activation,[2,2],[2,2],bnorm=True)
-        slayer6 = hf.stacked_layer(slayer5,s*1024,1,1,activation,[2,2],[2,2],bnorm=True)
+        slayer4 = hf.stacked_layer(slayer3,s*128,kt,kf,activation,[2,2],[2,2],bnorm=True)
+        slayer5 = hf.stacked_layer(slayer4,s*512,kt,kf,activation,[2,2],[2,2],bnorm=True)
+        slayer6 = hf.stacked_layer(slayer5,s*1024,kt,kf,activation,[2,2],[2,2],bnorm=True)
         
         # Fully connected and convolutional layers
-        slayer7 = hf.stacked_layer(slayer6,s*2048,1,1,activation,[1,1],[1,1],bnorm=True,dropout=False)
+        slayer7 = hf.stacked_layer(slayer6,s*2048,1,1,activation,[1,1],[1,1],bnorm=True,dropout=True)
         slayer8 = hf.stacked_layer(slayer7,s*2048,1,1,activation,[1,1],[1,1],bnorm=True,dropout=False)
+        slayer8 = tf.contrib.layers.batch_norm(slayer8,scale=True)
         
         # Transpose convolution layers
-        upsamp1 = tf.layers.conv2d_transpose(slayer8,filters=1,kernel_size=[s3sh[1],s3sh[1]],activation=activation)
+        upsamp1 = tf.layers.conv2d_transpose(slayer8,filters=256,kernel_size=[s3sh[1],s3sh[1]],activation=activation)
         upsamp1 = tf.add(upsamp1,tf.reshape(tf.reduce_max(slayer3,axis=-1),[-1,s3sh[1],s3sh[1],1]))
 
         upsamp1 = tf.contrib.layers.batch_norm(upsamp1,scale=True)
-        upsamp2 = tf.layers.conv2d_transpose(upsamp1,filters=1,kernel_size=[s3sh[1]+1,s3sh[1]+1],activation=activation)
+        upsamp2 = tf.layers.conv2d_transpose(upsamp1,filters=128,kernel_size=[s3sh[1]+1,s3sh[1]+1],activation=activation)
 
         upsamp2 = tf.contrib.layers.batch_norm(upsamp2,scale=True)
-        upsamp3 = tf.layers.conv2d_transpose(upsamp2,filters=1,kernel_size=[s1sh[1]-2*s3sh[1]+1,s1sh[1]-2*s3sh[1]+1],activation=activation)
+        upsamp3 = tf.layers.conv2d_transpose(upsamp2,filters=64,kernel_size=[s1sh[1]-2*s3sh[1]+1,s1sh[1]-2*s3sh[1]+1],activation=activation)
         upsamp3 = tf.add(upsamp3,tf.reshape(tf.reduce_max(slayer1,axis=-1),[-1,s1sh[1],s1sh[1],1]))
         upsh3 = upsamp3.get_shape().as_list()
-        tf.summary.image('Upsamp_3',tf.reshape(upsamp3[0,:,:,:],[1,34,34,1]))
+        tf.summary.image('Upsamp_3',tf.reshape(upsamp3[0,:,:,0],[1,34,34,1]))
 
         upsamp3 = tf.contrib.layers.batch_norm(upsamp3,scale=True)
         upsamp4 = tf.layers.conv2d_transpose(upsamp3,filters=2,kernel_size=[int(sh[1] - upsh3[1]) + 1,int(sh[1] - upsh3[1]) + 1],activation=activation)
@@ -90,7 +91,7 @@ RFI_guess = FCN(vis_input)
 RFI_targets = tf.placeholder(tf.int32, shape=[None, pad_size*pad_size])
 learn_rate = tf.placeholder(tf.float32, shape=[1])
 
-hthresh = hf.hard_thresh(RFI_guess)
+#hthresh = hf.hard_thresh(RFI_guess)
 argmax = tf.argmax(RFI_guess,axis=-1)
 
 recall = tf.metrics.recall(labels=RFI_targets,predictions=argmax)
@@ -98,9 +99,10 @@ precision = tf.metrics.precision(labels=RFI_targets,predictions=argmax)
 batch_accuracy = hf.batch_accuracy(RFI_targets,argmax)
 #accuracy = tf.metrics.accuracy(labels=RFI_targets,predictions=tf.argmax(RFI_guess,axis=-1))
 f1 = 2.*precision[0]*recall[0]/(precision[0]+recall[0])
-f1 = tf.where(tf.is_nan(f1),tf.ones_like(f1),f1)
+f1 = tf.where(tf.is_nan(f1),tf.zeros_like(f1),f1)
 #loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=RFI_targets,logits=RFI_guess)) + 100.*(1-f1)
-loss = tf.losses.sparse_softmax_cross_entropy(labels=RFI_targets,logits=RFI_guess)
+loss = tf.losses.sparse_softmax_cross_entropy(labels=RFI_targets,logits=RFI_guess)#,weights=1.-batch_accuracy)
+#loss = tf.losses.softmax_cross_entropy(onehot_labels=RFI_targets,logits=argmax,weights=1.-f1)
 
 tf.summary.scalar('loss',loss)
 tf.summary.scalar('recall',recall[0])
@@ -122,7 +124,7 @@ saver = tf.train.Saver()
 
 # Load dataset
 dset = hf.RFIDataset()
-dset.load(batch_size,pad_size,hybrid=False,chtypes=chtypes)
+dset.load(batch_size,pad_size,hybrid=True,chtypes=chtypes)
 
 with tf.Session() as sess:
 
@@ -138,31 +140,31 @@ with tf.Session() as sess:
         print('No Model Found.')
     if mode == 'train':
         train_writer = tf.summary.FileWriter('./'+model_name+'_train/',sess.graph)
-        lr = np.array([0.1])
+        lr = np.array([0.003])
         for i in range(start_step, start_step+num_steps+1):
             # Prepare Input Data                                                                                                                  
             batch_x, batch_targets = dset.next_train()
             # Training                                                                                                                           
             feed_dict = {vis_input: batch_x, RFI_targets: batch_targets,
                          learn_rate: lr}
-            _,loss_,s1,rec,pre,f1_ = sess.run([train_fcn,loss,summary,recall,precision,f1],feed_dict=feed_dict)
+            _,loss_,s1,rec,pre,f1_,ba = sess.run([train_fcn,loss,summary,recall,precision,f1,batch_accuracy],feed_dict=feed_dict)
             #s1 = sess.run(s1image, feed_dict=feed_dict)
             #up3 = sess.run(up3image, feed_dict=feed_dict)
             if i % 20 == 0:
                 train_writer.add_summary(s1,i)
                 train_writer.flush()
+                #lr *= .98
                 #summary_writer.add_summary(up3,i)
             if i % 100 == 0 or i == 1:
-                print('Step %i: RFI Crushinator Loss: %.9f' % (i, np.mean(loss_)))
+                print('Step %i: RFI Crushinator Loss: %.9f' % (i, loss_))
                 print('Recall : %.9f' % rec[0])
                 print('Precision : %.9f' % pre[0])
                 print('F1 : %.9f' % f1_)
+                print('Batch Accuracy : %.4f' % ba)
             if i % 1000 == 0 and i != 0:
                 print('Saving model...')
                 save_path = saver.save(sess,'./'+model_name+'/model_%i.ckpt' % i)
-                #lr *= 0.1
                 print('Learning rate decreased to %f.' % lr)
-                
     elif mode == 'eval':
         eval_writer = tf.summary.FileWriter('./'+model_name+'_eval/',sess.graph)
         for i in range(1, num_steps+1):
@@ -190,15 +192,21 @@ with tf.Session() as sess:
         print('Accuracy compared to XRFI flags: %f'% acc)
         for ind in range(16):
             plt.figure()
-            plt.subplot(311)
+            plt.subplot(421)
             plt.imshow(batch_x[ind,:,:,0],aspect='auto')
+            plt.title('Vis')
             plt.colorbar()
-            plt.subplot(312)
+            plt.subplot(422)
             plt.imshow(batch_targets[ind,:].reshape(pad_size,pad_size),aspect='auto')
+            plt.title('Targets')
             plt.colorbar()
-            plt.subplot(313)
+            plt.subplot(423)
             plt.imshow(tf.reshape(tf.argmax(g[ind,:,:],axis=-1),[pad_size,pad_size]).eval(),aspect='auto')
             plt.text(512,50,s=str(acc))
+            plt.title('Argmax')
             plt.colorbar()
-            plt.savefig('VisClassify_%i.pdf'%ind)
+            plt.subplot(424)
+            plt.imshow(tf.reshape(hf.hard_thresh(g[ind,:,:]),[pad_size,pad_size]).eval(),aspect='auto')
+            plt.title('Hard Threshold')
+            plt.savefig(model_name+'_%i.pdf'%ind)
             plt.clf()

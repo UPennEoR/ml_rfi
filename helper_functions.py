@@ -17,7 +17,25 @@ def normalize(X):
     sh = np.shape(X)
     LOGabsX = np.nan_to_num(np.log10(np.abs(X+(1e-5)*np.random.rand(sh[0],sh[1])))).real
     return (LOGabsX-np.nanmean(LOGabsX))/np.nanstd(np.abs(LOGabsX))
+
+def normphs(X):
+    """                                                                                                                                                                                            
+    Normalization for the log amplitude required in the folding process.                                                                                                                           
+    """
+    sh = np.shape(X)
+    phsX = np.angle(X)
+    return (phsX - np.nanmean(phsX))/np.nanstd(np.abs(phsX))
     
+def noisy_relu(x):
+    try:
+        mean,var = tf.nn.moments(x, axes=[1,2,3])
+    except:
+        mean,var = tf.nn.moments(x, axes=[1,2])
+    return tf.nn.relu(x+tf.random_normal(tf.shape(x),stddev=tf.multiply(var,var)))
+
+def leaky_relu(x,alpha=.8):
+    return tf.nn.relu(x) - alpha * tf.nn.relu(-x)
+
 def foldl(data,ch_fold=16):
     """
     Folding function for carving up a waterfall visibility flags for prediction in the FCN.
@@ -32,7 +50,7 @@ def pad(data,padding=2):
     #for 68 pad with 2
     sh = np.shape(data)
     t_pad = (sh[1] - sh[0])/2
-    data_pad = np.pad(data,pad_width=((t_pad+padding,t_pad+padding),(padding,padding)),mode='reflect')
+    data_pad = np.pad(data,pad_width=((t_pad+padding,t_pad+padding),(padding,padding)),mode='symmetric')
     return data_pad
 
 def unpad(data,diff=4,padding=2):
@@ -50,7 +68,7 @@ def fold(data,ch_fold=16):
     _data = data.T.reshape(ch_fold,sh[1]/ch_fold,-1)
     _DATA = np.array(map(transpose,_data))
     _DATApad = np.array(map(pad,_DATA))
-    DATA = np.stack((np.array(map(normalize,_DATApad)),np.angle(_DATApad)),axis=-1)
+    DATA = np.stack((np.array(map(normalize,_DATApad)),np.array(map(normphs,_DATApad)),_DATApad),axis=-1)
     return DATA
 
 def unfoldl(data_fold,nchans=1024):
@@ -90,7 +108,7 @@ def stacked_layer(input_layer,num_filter_layers,kt,kf,activation,stride,pool,bno
         
     convc = tf.layers.conv2d(inputs=convb,
                              filters=num_filter_layers,
-                             kernel_size=[kt,kf],
+                             kernel_size=[1,1],
                              padding="same",
                              activation=activation)
     if bnorm:
@@ -135,7 +153,10 @@ def delay_transform(data,flags):
     return tf.reduce_mean(tf.divide(DATA,DATA_noflags)[:,:,:,:])
 
 def hard_thresh(layer,thresh=1e-2):
-    layer = layer[:,:,1]
+    try:
+        layer = layer[:,:,1]
+    except:
+        layer = layer[:,1]
     return tf.where(layer > thresh,tf.ones_like(layer),tf.zeros_like(layer))
 
 #def load_data():
@@ -146,10 +167,11 @@ class RFIDataset():
 
     def load(self,batch_size,psize,hybrid=False,chtypes='AmpPhs'):
         # load data
+        self.chtypes = chtypes
         self.batch_size = batch_size
         print('A batch size of %i has been set.' % self.batch_size)
         f1 = h5py.File('RealVisRFI_v3.h5','r') # Load in a real dataset 
-        f2 = h5py.File('SimVisRFI_15_120_v4.h5','r') # Load in simulated data
+        f2 = h5py.File('SimVisRFI_15_120_v3.h5','r') # Load in simulated data
         #    f2 = h5py.File('RealVisRFI_v3.h5','r')
 
         self.psize = psize # Pixel pad size for individual carved bands
@@ -209,7 +231,7 @@ class RFIDataset():
             d_type = np.complex64
         else:
             d_type = np.float32
-        
+        real_len = np.shape(f_real)[0]        
         if hybrid:
             print('Hybrid training dataset selected.')
             # We want to mix the real and simulated datasets
@@ -218,42 +240,52 @@ class RFIDataset():
             self.eval_data = np.asarray(f_real[:int(real_len/2),:,:,:],dtype=d_type)
             self.eval_labels = np.asarray(f_real_labels[:int(real_len/2),:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
             
-            train_data = np.vstack((f_real[int(real_len/2):,:,:,:],f_sim),axis=-1)
-            train_labels = np.vstack((f_real_labels[int(real_len/2):,:,:],f_sim_labels),axis=-1)
+            train_data = np.vstack((f_real[int(real_len/2):,:,:,:],f_sim))
+            train_labels = np.vstack((f_real_labels[int(real_len/2):,:,:],f_sim_labels))
             hybrid_len = np.shape(train_data)[0]
             mix_ind = np.random.permutation(hybrid_len)
 
             self.train_data = train_data[mix_ind,:,:,:]
             self.train_labels = train_labels[mix_ind,:,:].reshape(-1,real_sh[1]*real_sh[2])
+            self.eval_len = np.shape(self.eval_data)[0]
+            self.train_len = np.shape(self.train_data)[0]
         else:
             # Format evaluation dataset
             sim_len = np.shape(f_sim)[0]
             self.eval_data = np.asarray(f_sim[:sim_len/2,:,:,:],dtype=d_type)
-            self.eval_labels = np.asarray(f_sim_labels[:sim_len/2,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
+            self.eval_labels = np.asarray(f_sim_labels[:sim_len/2,:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
             eval1 = np.shape(self.eval_data)[0]
 
             # Format training dataset
             #self.train_data = np.asarray(f_real[:700,:,:,:],dtype=np.float64)
             #self.train_labels = np.asarray(f_real_labels[:700,:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
             self.train_data = np.asarray(f_sim[sim_len/2:,:,:,:],dtype=d_type)#np.asarray(np.vstack((f_sim,f_real[:real_sh[0]/2,:,:,:])),dtype=np.float32)
-            self.train_labels = np.asarray(f_sim_labels[sim_len/2:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])#np.asarray(np.vstack((f_sim_labels,f_real_labels[:real_sh[0]/2,:,:])),dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
+            self.train_labels = np.asarray(f_sim_labels[sim_len/2:,:,:],dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])#np.asarray(np.vstack((f_sim_labels,f_real_labels[:real_sh[0]/2,:,:])),dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
 
             train0 = np.shape(self.train_data)[0]
             self.test_data = np.asarray(fold(f1['data'][rnd_ind,:,:],fcarve), dtype=d_type) # Random real visibility for testing
             self.test_labels = np.asarray(foldl(f1['flag'][rnd_ind,:,:],fcarve), dtype=np.int32).reshape(-1,real_sh[1]*real_sh[2])
+            self.eval_len = np.shape(self.eval_data)[0]
+            self.train_len = np.shape(self.train_data)[0]
 
     def next_train(self):
         self.train_data = np.roll(self.train_data,self.batch_size,axis=0)
         self.train_labels = np.roll(self.train_labels,self.batch_size,axis=0)
-        return self.train_data[:self.batch_size,:,:,:],self.train_labels[:self.batch_size,:]
+        rand_batch = np.random.randint(0,self.train_len,size=self.batch_size)
+        return self.train_data[rand_batch,:,:,:],self.train_labels[rand_batch,:]
 
     def next_eval(self):
         self.eval_data = np.roll(self.eval_data,self.batch_size,axis=0)
         self.eval_labels = np.roll(self.eval_labels,self.batch_size,axis=0)
-        return self.eval_data[:self.batch_size,:,:,:],self.eval_labels[:self.batch_size,:]
+        rand_batch = np.random.randint(0,self.eval_len,size=self.batch_size)
+        return self.eval_data[rand_batch,:,:,:],self.eval_labels[rand_batch,:]
 
     def random_test(self,samples):
         ind = np.random.randint(0,np.shape(self.eval_data)[0],size=samples)
-        return self.eval_data[ind,:,:,:].reshape(samples,self.psize,self.psize,2),self.eval_labels[ind,:].reshape(samples,self.psize*self.psize)
+        if self.chtypes == 'Amp':
+            ch = 1
+        elif self.chtypes == 'AmpPhs':
+            ch = 2
+        return self.eval_data[ind,:,:,:].reshape(samples,self.psize,self.psize,ch),self.eval_labels[ind,:].reshape(samples,self.psize*self.psize)
 
     
