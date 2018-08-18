@@ -13,14 +13,14 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 # Training Params                                                                                                                                 
-model_name = 'AmpSimBSize8'
-chtypes='Amp'
+model_name = 'AmpPhsSimBSize8'
+chtypes='AmpPhs'
 num_steps = 50001
 batch_size = 8
 pad_size = 68
-ch_input = 1
+ch_input = 2
 f_factor = 16
-mode = 'train'
+mode = 'eval'
 model_dir = glob("./"+model_name+"/model_*")
 
 try:
@@ -46,7 +46,8 @@ def FCN(x, reuse=None, mode=True):
         sh = x.get_shape().as_list()
         input_layer = tf.cast(tf.reshape(x,[-1,sh[1],sh[2],sh[3]]),dtype=tf.float32)
         tf.summary.image('IP_Amp',tf.reshape(input_layer[0,:,:,0],[1,pad_size,pad_size,1]))
-#        tf.summary.image('IP_Phs',tf.reshape(input_layer[0,:,:,1],[1,pad_size,pad_size,1]))
+        if sh[3] > 1:
+            tf.summary.image('IP_Phs',tf.reshape(input_layer[0,:,:,1],[1,pad_size,pad_size,1]))
         # Convolution / Downsampling layers
         slayer1 = hf.stacked_layer(input_layer,s*16,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
         s1sh = slayer1.get_shape().as_list()
@@ -128,7 +129,7 @@ saver = tf.train.Saver()
 
 # Load dataset
 dset = hf.RFIDataset()
-dset.load(batch_size,pad_size,hybrid=False,chtypes=chtypes,fold_factor=f_factor)
+dset.load(batch_size,pad_size,hybrid=True,chtypes=chtypes,fold_factor=f_factor)
 
 with tf.Session() as sess:
 
@@ -168,9 +169,9 @@ with tf.Session() as sess:
             if i % 1000 == 0 and i != 0:
                 print('Saving model...')
                 save_path = saver.save(sess,'./'+model_name+'/model_%i.ckpt' % i)
-#            if i % 10000 == 0:
-#                lr *= 0.1
-#                print('Learning rate decreased to %f.' % lr)
+            if i % 10000 == 0:
+                lr *= 0.1
+                print('Learning rate decreased to %f.' % lr)
     elif mode == 'eval':
         eval_writer = tf.summary.FileWriter('./'+model_name+'_eval/',sess.graph)
         for i in range(1, num_steps+1):
