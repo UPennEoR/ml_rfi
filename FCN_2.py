@@ -13,14 +13,15 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 # Training Params                                                                                                                                 
-model_name = 'AmpPhsSimBSize8'
+model_name = 'AmpPhsv2Simv6_64BSize_DOR5'
 chtypes='AmpPhs'
-num_steps = 50001
-batch_size = 8
+num_steps = 3000
+batch_size = 64
 pad_size = 68
 ch_input = 2
 f_factor = 16
 mode = 'eval'
+hybrid=True
 model_dir = glob("./"+model_name+"/model_*")
 
 try:
@@ -50,35 +51,55 @@ def FCN(x, reuse=None, mode=True):
             tf.summary.image('IP_Phs',tf.reshape(input_layer[0,:,:,1],[1,pad_size,pad_size,1]))
         # Convolution / Downsampling layers
         slayer1 = hf.stacked_layer(input_layer,s*16,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+#        slayer1 = tf.contrib.layers.layer_norm(slayer1)
         s1sh = slayer1.get_shape().as_list()
         print(s1sh)
         tf.summary.image('S1',tf.reshape(tf.reduce_sum(slayer1[0,:,:,:],axis=-1),[1,int(pad_size/2),int(pad_size/2),1]))
-
+        
         slayer2 = hf.stacked_layer(slayer1,s*32,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+#        slayer2 = tf.contrib.layers.layer_norm(slayer2)
+        
         slayer3 = hf.stacked_layer(slayer2,s*64,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+#        slayer3 = tf.contrib.layers.layer_norm(slayer3)
+
         s3sh = slayer3.get_shape().as_list()
         slayer4 = hf.stacked_layer(slayer3,s*128,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+#        slayer4 = tf.contrib.layers.layer_norm(slayer4)
+        
         slayer5 = hf.stacked_layer(slayer4,s*512,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+#        slayer5 = tf.contrib.layers.layer_norm(slayer5)
+        
         slayer6 = hf.stacked_layer(slayer5,s*1024,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+        s6sh = slayer6.get_shape().as_list()
+#        slayer6 = tf.contrib.layers.layer_norm(slayer6)
         
         # Fully connected and convolutional layers
         slayer7 = hf.stacked_layer(slayer6,s*2048,1,1,activation,[1,1],[1,1],bnorm=True,dropout=True,mode=mode_bn)
+#        slayer7 = tf.contrib.layers.layer_norm(slayer7)
         slayer8 = hf.stacked_layer(slayer7,s*2048,1,1,activation,[1,1],[1,1],bnorm=True,dropout=True,mode=mode_bn)
+#        slayer8 = tf.contrib.layers.layer_norm(slayer8)
         
         # Transpose convolution layers
-        upsamp1 = tf.layers.conv2d_transpose(slayer8,filters=256,kernel_size=[s3sh[1],s3sh[1]],activation=activation)
-        upsamp1 = tf.add(upsamp1,tf.reshape(tf.reduce_max(slayer3,axis=-1),[-1,s3sh[1],s3sh[1],1]))
+        upsamp1 = tf.layers.conv2d_transpose(slayer8,filters=1024,kernel_size=[s6sh[1],s6sh[1]],activation=activation)
+#        upsamp1 = tf.layers.batch_normalization(upsamp1,scale=True,center=True,training=mode,fused=True)       
+        upsamp1 = tf.concat([upsamp1,slayer6],axis=-1)
         upsamp1 = tf.layers.batch_normalization(upsamp1,scale=True,center=True,training=mode,fused=True)#tf.contrib.layers.batch_norm(upsamp1,scale=True)
-
-        upsamp2 = tf.layers.conv2d_transpose(upsamp1,filters=128,kernel_size=[s3sh[1]+1,s3sh[1]+1],activation=activation)
+#        upsamp1 = tf.layers.dropout(upsamp1, rate=.8)
+        
+        upsamp2 = tf.layers.conv2d_transpose(upsamp1,filters=256,kernel_size=[s6sh[1]+1,s6sh[1]+1],activation=activation)
         upsamp2 = tf.layers.batch_normalization(upsamp2,scale=True,center=True,training=mode_bn,fused=True)#tf.contrib.layers.batch_norm(upsamp2,scale=True)
-        upsamp3 = tf.layers.conv2d_transpose(upsamp2,filters=64,kernel_size=[s1sh[1]-2*s3sh[1]+1,s1sh[1]-2*s3sh[1]+1],activation=activation)
-        upsamp3 = tf.add(upsamp3,tf.reshape(tf.reduce_max(slayer1,axis=-1),[-1,s1sh[1],s1sh[1],1]))
+#        upsamp2 = tf.contrib.layers.layer_norm(upsamp2)
+
+        upsamp3 = tf.layers.conv2d_transpose(upsamp2,filters=64,kernel_size=[s3sh[1]-2*s6sh[1]+1,s3sh[1]-2*s6sh[1]+1],activation=activation)
+#        upsamp3 = tf.layers.batch_normalization(upsamp3,scale=True,center=True,training=mode,fused=True)
+        upsamp3 = tf.concat([upsamp3,slayer3],axis=-1)
         upsh3 = upsamp3.get_shape().as_list()
         upsamp3 = tf.layers.batch_normalization(upsamp3,scale=True,center=True,training=mode_bn,fused=True)#tf.contrib.layers.batch_norm(upsamp3,scale=True)
-        tf.summary.image('Upsamp_3',tf.reshape(upsamp3[0,:,:,0],[1,int(pad_size/2),int(pad_size/2),1]))
+#        upsamp3 = tf.layers.dropout(upsamp3, rate=.8)
+        #tf.summary.image('Upsamp_3',tf.reshape(upsamp3[5,:,:,0],[1,int(pad_size/2),int(pad_size/2),1]))
         upsamp4 = tf.layers.conv2d_transpose(upsamp3,filters=2,kernel_size=[int(sh[1] - upsh3[1]) + 1,int(sh[1] - upsh3[1]) + 1],activation=activation)
         upsamp4 = tf.layers.batch_normalization(upsamp4,scale=True,center=True,training=mode_bn,fused=True)#tf.contrib.layers.batch_norm(upsamp4,scale=True)
+#        upsamp4 = tf.nn.l2_normalize(upsamp4,axis=[1,2,3])
         tf.summary.image('Flag Guess',tf.reshape(upsamp4[0,:,:,1],[1,pad_size,pad_size,1]))
         final_conv = tf.reshape(upsamp4,[-1,sh[1]*sh[1],2])
         
@@ -99,9 +120,11 @@ learn_rate = tf.placeholder(tf.float32, shape=[1])
 #hthresh = hf.hard_thresh(RFI_guess)
 argmax = tf.argmax(RFI_guess,axis=-1)
 
-recall = tf.metrics.recall(labels=RFI_targets,predictions=argmax)
+recall = tf.metrics.recall(labels=RFI_targets,predictions=argmax) #aka True Pos. Rate
 precision = tf.metrics.precision(labels=RFI_targets,predictions=argmax)
 batch_accuracy = hf.batch_accuracy(RFI_targets,argmax)
+#fpr = tf.metrics.false_positives(RFI_targets,argmax)
+auc = tf.metrics.auc(RFI_targets,argmax)
 #accuracy = tf.metrics.accuracy(labels=RFI_targets,predictions=tf.argmax(RFI_guess,axis=-1))
 f1 = 2.*precision[0]*recall[0]/(precision[0]+recall[0])
 f1 = tf.where(tf.is_nan(f1),tf.zeros_like(f1),f1)
@@ -110,10 +133,12 @@ loss = tf.losses.sparse_softmax_cross_entropy(labels=RFI_targets,logits=RFI_gues
 #loss = tf.losses.softmax_cross_entropy(onehot_labels=RFI_targets,logits=argmax,weights=1.-f1)
 
 tf.summary.scalar('loss',loss)
+#tf.summary.scalar('False Positive Rate',fpr[0])
 tf.summary.scalar('recall',recall[0])
 tf.summary.scalar('precision',precision[0])
 tf.summary.scalar('F1',f1)
 tf.summary.scalar('batch_accuracy',batch_accuracy)
+tf.summary.scalar('AUC',auc[0])
 summary = tf.summary.merge_all()
 optimizer_gen = tf.train.AdamOptimizer(learning_rate=learn_rate[0])
 #optimizer_gen = tf.train.MomentumOptimizer(learning_rate=0.01,momentum=0.01)
@@ -129,10 +154,12 @@ saver = tf.train.Saver()
 
 # Load dataset
 dset = hf.RFIDataset()
-dset.load(batch_size,pad_size,hybrid=True,chtypes=chtypes,fold_factor=f_factor)
+dset.load(batch_size,pad_size,hybrid=hybrid,chtypes=chtypes,fold_factor=f_factor)
+
+fpr_arr = []
+tpr_arr = []
 
 with tf.Session() as sess:
-
     
     # Run the initializer                                                                                                                         
     sess.run(init)
@@ -167,11 +194,13 @@ with tf.Session() as sess:
                 print('F1 : %.9f' % f1_)
                 print('Batch Accuracy : %.4f' % ba)
             if i % 1000 == 0 and i != 0:
+                #lr *= .98
+                #print('Learning rate decreased to %f.' % lr)
                 print('Saving model...')
                 save_path = saver.save(sess,'./'+model_name+'/model_%i.ckpt' % i)
-            if i % 10000 == 0:
-                lr *= 0.1
-                print('Learning rate decreased to %f.' % lr)
+            #if i % 10000 == 0:
+                #lr *= 0.1
+                #print('Learning rate decreased to %f.' % lr)
     elif mode == 'eval':
         eval_writer = tf.summary.FileWriter('./'+model_name+'_eval/',sess.graph)
         for i in range(1, num_steps+1):
@@ -182,6 +211,7 @@ with tf.Session() as sess:
                 if 'acc' not in globals():
                     acc = 0.
                 print('F1 %f' % f1_)
+#                print('False Positive Rate %f' % fpr_[0])
                 acc = hf.batch_accuracy(batch_targets,tf.argmax(eval_class,axis=-1)).eval()
                 print('Batch accuracy %f' % acc)
             if i % 20 == 0:
@@ -193,7 +223,7 @@ with tf.Session() as sess:
         time0 = time()
         ind = 0
         batch_x, batch_targets = dset.random_test(16)
-        g = sess.run(RFI_guess, feed_dict={vis_input: batch_x, mode_bn: True})
+        g,fpr_,tpr_ = sess.run([RFI_guess,FPR,TPR], feed_dict={vis_input: batch_x, mode_bn: True})
         print('N=%i number of baselines time: ' % 1,time() - time0)
         for ind in range(16):
             acc = hf.accuracy(batch_targets[ind,:],tf.reshape(tf.argmax(g[ind,:,:],axis=-1),[-1]).eval())
@@ -204,7 +234,10 @@ with tf.Session() as sess:
             plt.title('Amplitude')
             plt.colorbar()
             plt.subplot(322)
-            plt.imshow(hf.unpad(batch_x[ind,:,:,0]),aspect='auto')
+            if chtypes == 'AmpPhs':
+                plt.imshow(hf.unpad(batch_x[ind,:,:,1]),aspect='auto')
+            else:
+                plt.imshow(hf.unpad(batch_x[ind,:,:,0]),aspect='auto')
             plt.title('Phase')
             plt.colorbar()
             

@@ -3,6 +3,8 @@ import tensorflow as tf
 import h5py
 from time import time
 import os
+import random
+import pylab as plt
 
 np.random.seed(555)
 
@@ -44,7 +46,7 @@ def foldl(data,ch_fold=16,padding=2):
     Folding function for carving up a waterfall visibility flags for prediction in the FCN.
     """
     sh = np.shape(data)
-    _data = data.T.reshape(ch_fold,sh[1]/ch_fold,-1)#[2:14]
+    _data = data.T.reshape(ch_fold,sh[1]/ch_fold,-1)[2:14]
     _DATA = np.array(map(transpose,_data))
     _DATApad = np.array(map(pad,_DATA))
     return _DATApad
@@ -71,7 +73,7 @@ def fold(data,ch_fold=16,padding=2):
     and phase channels.
     """
     sh = np.shape(data)
-    _data = data.T.reshape(ch_fold,sh[1]/ch_fold,-1)#[2:14]
+    _data = data.T.reshape(ch_fold,sh[1]/ch_fold,-1)[2:14]
     _DATA = np.array(map(transpose,_data))
     _DATApad = np.array(map(pad,_DATA))
     DATA = np.stack((np.array(map(normalize,_DATApad)),np.mod(np.array(map(normphs,_DATApad)),np.pi),np.mod(np.array(map(normphs,_DATApad)),np.pi)),axis=-1)
@@ -163,6 +165,7 @@ def delay_transform(data,flags):
     DATA = tf.transpose(DATA_,perm=[2,1,0,3])
     return tf.reduce_mean(tf.divide(DATA,DATA_noflags)[:,:,:,:])
 
+
 def hard_thresh(layer,thresh=1e-5):
     try:
         layer = layer[:,:,1]
@@ -170,6 +173,23 @@ def hard_thresh(layer,thresh=1e-5):
         layer = layer[:,1]
     return tf.where(layer > thresh,tf.ones_like(layer),tf.zeros_like(layer))
 
+def ROC_stats(ground_truth,softmax_logits):
+    ground_truth = tf.cast(ground_truth,dtype=tf.bool)
+    softmax_logits = tf.cast(softmax_logits,dtype=tf.float32)
+    #for i in linspace(.0,1.,100):
+    thresholds = np.linspace(.0,1.,100,dtype=np.float32)
+    FPR = tf.metrics.false_positives_at_thresholds(ground_truth,softmax_logits,thresholds)[0]
+    TPR = tf.metrics.true_positives_at_thresholds(ground_truth,softmax_logits,thresholds)[0]
+    return FPR,TPR
+
+def plot_ROC(FPR,TPR,fname):
+    fig = plt.figure()
+    plt.plot(FPR,TPR)
+    plt.plot(np.linspace(0.,1.,100),np.linspace(0.,1.,100),label='Random Choice')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.savefig(fname+'.pdf')
+    
 #def load_data():
 
 class RFIDataset():
@@ -182,7 +202,7 @@ class RFIDataset():
         self.batch_size = batch_size
         print('A batch size of %i has been set.' % self.batch_size)
         f1 = h5py.File('RealVisRFI_v3.h5') # 'RealVisRFI_v3.h5','r') # Load in a real dataset 
-        f2 = h5py.File('SimVis_v5.h5','r') # Load in simulated data
+        f2 = h5py.File('SimVis_v6_10000.h5','r') # Load in simulated data
         #    f2 = h5py.File('RealVisRFI_v3.h5','r')
 
         self.psize = psize # Pixel pad size for individual carved bands
@@ -192,13 +212,13 @@ class RFIDataset():
         # but with only half of the real data. The remaining real data half will become
         # the evaluation dataset
     
-        f1_r = np.shape(f1['data'])[0]
+        f1_r = 900#np.shape(f1['data'])[0]
         f2_s = np.shape(f2['data'])[0]
 
         print 'Size of real dataset: ',f1_r
         print ''
         # Cut up real dataset and labels
-        f1_r = np.shape(f1['data'])[0] # Everything after 900 doesn't look good
+        f1_r = 900#np.shape(f1['data'])[0] # Everything after 900 doesn't look good
         samples = range(f1_r)
         rnd_ind = np.random.randint(0,f1_r)
         #else:
@@ -241,7 +261,7 @@ class RFIDataset():
         if chtypes == 'AmpPhsCmp':
             d_type = np.complex64
         else:
-            d_type = np.float32
+            d_type = np.float64
         real_len = np.shape(f_real)[0]        
         if hybrid:
             print('Hybrid training dataset selected.')
@@ -282,17 +302,17 @@ class RFIDataset():
     def next_train(self):
 #        self.train_data = np.roll(self.train_data,self.batch_size,axis=0)
 #        self.train_labels = np.roll(self.train_labels,self.batch_size,axis=0)
-        rand_batch = np.random.randint(0,self.train_len,size=self.batch_size)
+        rand_batch = random.sample(range(self.train_len),self.batch_size)#np.random.randint(0,self.train_len,size=self.batch_size)
         return self.train_data[rand_batch,:,:,:],self.train_labels[rand_batch,:]
 
     def next_eval(self):
 #        self.eval_data = np.roll(self.eval_data,self.batch_size,axis=0)
 #        self.eval_labels = np.roll(self.eval_labels,self.batch_size,axis=0)
-        rand_batch = np.random.randint(0,self.eval_len,size=self.batch_size)
+        rand_batch = random.sample(range(self.eval_len),self.batch_size)#np.random.randint(0,self.eval_len,size=self.batch_size)
         return self.eval_data[rand_batch,:,:,:],self.eval_labels[rand_batch,:]
 
     def random_test(self,samples):
-        ind = np.random.randint(0,np.shape(self.eval_data)[0],size=samples)
+        ind = random.sample(range(np.shape(self.eval_data)[0]),samples)#np.random.randint(0,np.shape(self.eval_data)[0],size=samples)
         if self.chtypes == 'Amp':
             ch = 1
         elif self.chtypes == 'AmpPhs':
