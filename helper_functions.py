@@ -46,7 +46,7 @@ def foldl(data,ch_fold=16,padding=2):
     Folding function for carving up a waterfall visibility flags for prediction in the FCN.
     """
     sh = np.shape(data)
-    _data = data.T.reshape(ch_fold,sh[1]/ch_fold,-1)[2:14]
+    _data = data.T.reshape(ch_fold,sh[1]/ch_fold,-1)#[2:14]
     _DATA = np.array(map(transpose,_data))
     _DATApad = np.array(map(pad,_DATA))
     return _DATApad
@@ -73,10 +73,10 @@ def fold(data,ch_fold=16,padding=2):
     and phase channels.
     """
     sh = np.shape(data)
-    _data = data.T.reshape(ch_fold,sh[1]/ch_fold,-1)[2:14]
+    _data = data.T.reshape(ch_fold,sh[1]/ch_fold,-1)#[2:14]
     _DATA = np.array(map(transpose,_data))
     _DATApad = np.array(map(pad,_DATA))
-    DATA = np.stack((np.array(map(normalize,_DATApad)),np.mod(np.array(map(normphs,_DATApad)),np.pi),np.mod(np.array(map(normphs,_DATApad)),np.pi)),axis=-1)
+    DATA = np.stack((np.array(map(normalize,_DATApad)),np.array(map(normphs,_DATApad)),np.mod(np.array(map(normphs,_DATApad)),np.pi)),axis=-1)
     return DATA
 
 def unfoldl(data_fold,nchans=1024,ch_fold=16,padding=2):
@@ -114,7 +114,7 @@ def stacked_layer(input_layer,num_filter_layers,kt,kf,activation,stride,pool,bno
                              filters=num_filter_layers,
                              kernel_size=[kt,kf],
                              padding="same",
-                                                   activation=activation),rate=.5)
+                                                   activation=activation),rate=.7)
                              
         
     convc = tf.layers.conv2d(inputs=convb,
