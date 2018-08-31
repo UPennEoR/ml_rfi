@@ -8,21 +8,33 @@ from glob import glob
 import helper_functions as hf
 from time import time
 import os
+from sklearn.metrics import roc_curve
 
 # Run on a single GPU
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
-# Training Params                                                                                                                                 
-model_name = 'AmpPhsv2Simv6_64BSize_DOR5'
-chtypes='AmpPhs'
-num_steps = 3000
+# Training Params
+tdset_version = 'v5'      # which training dataset version to use
+FCN_version = 'v3'        # which FCN version number
+tdset_type = 'Sim'        # type of training dataset used
+edset_type = 'Real'       # type of eval dataset used
+mods = 'DOR7_2xDeep_DualNet' #'DOR7_sub_2xDeep'  # additional modifiers that have been applied
+num_steps = 10000
 batch_size = 64
 pad_size = 68
 ch_input = 2
-f_factor = 16
-mode = 'eval'
-hybrid=True
+mode = 'train'
+hybrid=False
+chtypes='AmpPhs'
+model_name = chtypes+FCN_version+tdset_type+edset_type+tdset_version+'_'+str(batch_size)+'BSize_'+mods
 model_dir = glob("./"+model_name+"/model_*")
+plot = False
+if hybrid:
+    cut = True
+    f_factor = 12
+else:
+    cut = False
+    f_factor = 16
 
 try:
     models2sort = [int(model_dir[i].split('/')[2].split('.')[0].split('_')[1]) for i in range(len(model_dir))]
@@ -42,57 +54,86 @@ def FCN(x, reuse=None, mode=True):
     with tf.variable_scope('FCN', reuse=reuse):
         kt = 3
         kf = 3
-        s = 1
+        s = 4 #4 for Amp, 2 for AmpPhs
+              # 2xDeep 8 for Amp, 4 for AmpPhs
         activation = tf.nn.leaky_relu
         sh = x.get_shape().as_list()
         input_layer = tf.cast(tf.reshape(x,[-1,sh[1],sh[2],sh[3]]),dtype=tf.float32)
         tf.summary.image('IP_Amp',tf.reshape(input_layer[0,:,:,0],[1,pad_size,pad_size,1]))
         if sh[3] > 1:
-            tf.summary.image('IP_Phs',tf.reshape(input_layer[0,:,:,1],[1,pad_size,pad_size,1]))
+            slayer1 = hf.stacked_layer(tf.reshape(input_layer[:,:,:,0],[-1,sh[1],sh[2],1]),4*s,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+            #slayer2a = hf.stacked_layer(slayer1a,4*s,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+            slayer1b = hf.stacked_layer(tf.reshape(input_layer[:,:,:,1],[-1,sh[1],sh[2],1]),4*s,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=False)
+            slayer2b = hf.stacked_layer(slayer1b,8*s,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=False,dropout=True)
+            slayer3b = hf.stacked_layer(slayer2b,16*s,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=False)
+            slayer4b = hf.stacked_layer(slayer3b,32*s,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=False,dropout=True)
+            slayer5b = hf.stacked_layer(slayer4b,64*s,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=False)
+            slayer6b = hf.stacked_layer(slayer5b,128*s,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=False)
+
+            #slayer2b = hf.stacked_layer(slayer1b,4*s,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=True)
+            #slayer1 = tf.concat([slayer1a,slayer1b],axis=-1)
+
+            s1sh = slayer1.get_shape().as_list()
+            tf.summary.image('Amp_l1',tf.reshape(tf.reduce_max(slayer1[0,:,:,:],axis=-1),[1,int(pad_size/2),int(pad_size/2),1]))
+            tf.summary.image('Phs_l1',tf.reshape(tf.reduce_max(slayer1b[0,:,:,:],axis=-1),[1,int(pad_size/2),int(pad_size/2),1]))
+#            tf.summary.image('Phs_l2',tf.reshape(tf.reduce_max(slayer2b[0,:,:,:],axis=-1),[1,int(pad_size/4),int(pad_size/4),1]))
+#            tf.summary.image('IP_Phs2',tf.reshape(input_layer[0,:,:,2],[1,pad_size,pad_size,1]))
+            
+        else:
+            slayer1 = hf.stacked_layer(input_layer,s*4,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+#            slayer2 = hf.stacked_layer(slayer1,s*8,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+            s1sh = slayer1.get_shape().as_list()
+            tf.summary.image('S1',tf.reshape(tf.reduce_max(slayer1[0,:,:,:],axis=-1),[1,int(pad_size/2),int(pad_size/2),1]))
         # Convolution / Downsampling layers
-        slayer1 = hf.stacked_layer(input_layer,s*16,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+#        slayer1 = hf.stacked_layer(input_layer,s*16,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
 #        slayer1 = tf.contrib.layers.layer_norm(slayer1)
-        s1sh = slayer1.get_shape().as_list()
-        print(s1sh)
-        tf.summary.image('S1',tf.reshape(tf.reduce_sum(slayer1[0,:,:,:],axis=-1),[1,int(pad_size/2),int(pad_size/2),1]))
         
-        slayer2 = hf.stacked_layer(slayer1,s*32,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+        slayer2 = hf.stacked_layer(slayer1,s*8,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
 #        slayer2 = tf.contrib.layers.layer_norm(slayer2)
         
-        slayer3 = hf.stacked_layer(slayer2,s*64,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+        slayer3 = hf.stacked_layer(slayer2,s*16,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,dropout=True)
 #        slayer3 = tf.contrib.layers.layer_norm(slayer3)
 
         s3sh = slayer3.get_shape().as_list()
-        slayer4 = hf.stacked_layer(slayer3,s*128,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+        slayer4 = hf.stacked_layer(slayer3,s*32,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
 #        slayer4 = tf.contrib.layers.layer_norm(slayer4)
         
-        slayer5 = hf.stacked_layer(slayer4,s*512,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+        slayer5 = hf.stacked_layer(slayer4,s*64,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,dropout=True)
 #        slayer5 = tf.contrib.layers.layer_norm(slayer5)
         
-        slayer6 = hf.stacked_layer(slayer5,s*1024,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
+        slayer6 = hf.stacked_layer(slayer5,s*128,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
         s6sh = slayer6.get_shape().as_list()
-#        slayer6 = tf.contrib.layers.layer_norm(slayer6)
-        
+
+#        if sh[3] > 1.:
+#            slayer6 = tf.add(slayer6,slayer6b)#tf.concat([slayer6,slayer6b],axis=-1)
         # Fully connected and convolutional layers
-        slayer7 = hf.stacked_layer(slayer6,s*2048,1,1,activation,[1,1],[1,1],bnorm=True,dropout=True,mode=mode_bn)
+        if sh[3] > 1.:
+            slayer6 = tf.concat([slayer6,slayer6b],axis=-1)
+            #slayer6 = tf.concat([tf.contrib.layers.layer_norm(tf.layers.dropout(slayer6,rate=0.3)),tf.contrib.layers.layer_norm(tf.layers.dropout(slayer6b,rate=0.3))],axis=-1)
+#            slayer6 = tf.add(slayer6,slayer6b)
+
+        slayer7 = hf.stacked_layer(slayer6,s*256,1,1,activation,[1,1],[1,1],bnorm=True,dropout=True,mode=mode_bn)
 #        slayer7 = tf.contrib.layers.layer_norm(slayer7)
-        slayer8 = hf.stacked_layer(slayer7,s*2048,1,1,activation,[1,1],[1,1],bnorm=True,dropout=True,mode=mode_bn)
+        slayer8 = hf.stacked_layer(slayer7,s*256,1,1,activation,[1,1],[1,1],bnorm=True,dropout=True,mode=mode_bn)
 #        slayer8 = tf.contrib.layers.layer_norm(slayer8)
         
         # Transpose convolution layers
-        upsamp1 = tf.layers.conv2d_transpose(slayer8,filters=1024,kernel_size=[s6sh[1],s6sh[1]],activation=activation)
+        upsamp1 = tf.layers.conv2d_transpose(slayer8,filters=128,kernel_size=[s6sh[1],s6sh[1]],activation=activation)
 #        upsamp1 = tf.layers.batch_normalization(upsamp1,scale=True,center=True,training=mode,fused=True)       
         upsamp1 = tf.concat([upsamp1,slayer6],axis=-1)
         upsamp1 = tf.layers.batch_normalization(upsamp1,scale=True,center=True,training=mode,fused=True)#tf.contrib.layers.batch_norm(upsamp1,scale=True)
 #        upsamp1 = tf.layers.dropout(upsamp1, rate=.8)
         
-        upsamp2 = tf.layers.conv2d_transpose(upsamp1,filters=256,kernel_size=[s6sh[1]+1,s6sh[1]+1],activation=activation)
+        upsamp2 = tf.layers.conv2d_transpose(upsamp1,filters=64,kernel_size=[s6sh[1]+1,s6sh[1]+1],activation=activation)
         upsamp2 = tf.layers.batch_normalization(upsamp2,scale=True,center=True,training=mode_bn,fused=True)#tf.contrib.layers.batch_norm(upsamp2,scale=True)
 #        upsamp2 = tf.contrib.layers.layer_norm(upsamp2)
 
-        upsamp3 = tf.layers.conv2d_transpose(upsamp2,filters=64,kernel_size=[s3sh[1]-2*s6sh[1]+1,s3sh[1]-2*s6sh[1]+1],activation=activation)
+        upsamp3 = tf.layers.conv2d_transpose(upsamp2,filters=16,kernel_size=[s3sh[1]-2*s6sh[1]+1,s3sh[1]-2*s6sh[1]+1],activation=activation)
 #        upsamp3 = tf.layers.batch_normalization(upsamp3,scale=True,center=True,training=mode,fused=True)
-        upsamp3 = tf.concat([upsamp3,slayer3],axis=-1)
+        if sh[3] > 1.:
+            upsamp3 = tf.concat([upsamp3,slayer3,slayer3b],axis=-1)
+        else:
+            upsamp3 = tf.concat([upsamp3,slayer3],axis=-1)
         upsh3 = upsamp3.get_shape().as_list()
         upsamp3 = tf.layers.batch_normalization(upsamp3,scale=True,center=True,training=mode_bn,fused=True)#tf.contrib.layers.batch_norm(upsamp3,scale=True)
 #        upsamp3 = tf.layers.dropout(upsamp3, rate=.8)
@@ -124,7 +165,6 @@ recall = tf.metrics.recall(labels=RFI_targets,predictions=argmax) #aka True Pos.
 precision = tf.metrics.precision(labels=RFI_targets,predictions=argmax)
 batch_accuracy = hf.batch_accuracy(RFI_targets,argmax)
 #fpr = tf.metrics.false_positives(RFI_targets,argmax)
-auc = tf.metrics.auc(RFI_targets,argmax)
 #accuracy = tf.metrics.accuracy(labels=RFI_targets,predictions=tf.argmax(RFI_guess,axis=-1))
 f1 = 2.*precision[0]*recall[0]/(precision[0]+recall[0])
 f1 = tf.where(tf.is_nan(f1),tf.zeros_like(f1),f1)
@@ -138,7 +178,7 @@ tf.summary.scalar('recall',recall[0])
 tf.summary.scalar('precision',precision[0])
 tf.summary.scalar('F1',f1)
 tf.summary.scalar('batch_accuracy',batch_accuracy)
-tf.summary.scalar('AUC',auc[0])
+#tf.summary.scalar('AUC',auc[0])
 summary = tf.summary.merge_all()
 optimizer_gen = tf.train.AdamOptimizer(learning_rate=learn_rate[0])
 #optimizer_gen = tf.train.MomentumOptimizer(learning_rate=0.01,momentum=0.01)
@@ -154,10 +194,10 @@ saver = tf.train.Saver()
 
 # Load dataset
 dset = hf.RFIDataset()
-dset.load(batch_size,pad_size,hybrid=hybrid,chtypes=chtypes,fold_factor=f_factor)
+dset.load(tdset_version,batch_size,pad_size,hybrid=hybrid,chtypes=chtypes,fold_factor=f_factor,cut=cut)
 
-fpr_arr = []
-tpr_arr = []
+#fpr_arr = []
+#tpr_arr = []
 
 with tf.Session() as sess:
     
@@ -222,37 +262,87 @@ with tf.Session() as sess:
     else:
         time0 = time()
         ind = 0
-        batch_x, batch_targets = dset.random_test(16)
-        g,fpr_,tpr_ = sess.run([RFI_guess,FPR,TPR], feed_dict={vis_input: batch_x, mode_bn: True})
+        batch_x, batch_targets = dset.random_test(600)
+        g = sess.run(RFI_guess, feed_dict={vis_input: batch_x, mode_bn: True})
         print('N=%i number of baselines time: ' % 1,time() - time0)
-        for ind in range(16):
+        ct = 0
+        ind = 0
+        while ct != 100:
+            print(ct)
+#        for ind in range(1000):
             acc = hf.accuracy(batch_targets[ind,:],tf.reshape(tf.argmax(g[ind,:,:],axis=-1),[-1]).eval())
             print('Accuracy compared to XRFI flags: %f'% acc)
-            plt.figure()
-            plt.subplot(321)
-            plt.imshow(hf.unpad(batch_x[ind,:,:,0]),aspect='auto')
-            plt.title('Amplitude')
-            plt.colorbar()
-            plt.subplot(322)
-            if chtypes == 'AmpPhs':
-                plt.imshow(hf.unpad(batch_x[ind,:,:,1]),aspect='auto')
-            else:
+            if plot:
+                plt.figure()
+                plt.subplot(321)
                 plt.imshow(hf.unpad(batch_x[ind,:,:,0]),aspect='auto')
-            plt.title('Phase')
-            plt.colorbar()
+                plt.title('Amplitude')
+                plt.colorbar()
+                plt.subplot(322)
+                if chtypes == 'AmpPhs':
+                    plt.imshow(hf.unpad(batch_x[ind,:,:,1]),aspect='auto')
+                else:
+                    plt.imshow(hf.unpad(batch_x[ind,:,:,0]),aspect='auto')
+                plt.title('Phase')
+                plt.colorbar()
             
-            plt.subplot(323)
-            plt.imshow(hf.unpad(batch_targets[ind,:].reshape(pad_size,pad_size)),aspect='auto')
-            plt.title('Targets')
-            plt.colorbar()
-            plt.subplot(324)
-            plt.imshow(hf.unpad(tf.reshape(tf.argmax(g[ind,:,:],axis=-1),[pad_size,pad_size]).eval()),aspect='auto')
-            plt.text(512,50,s=str(acc))
-            plt.title('Argmax')
-            plt.colorbar()
-            plt.subplot(313)
-            plt.imshow(hf.unpad(tf.reshape(hf.hard_thresh(g[ind,:,:]),[pad_size,pad_size]).eval()),aspect='auto')
-            plt.title('Hard Threshold')
-            plt.tight_layout()
-            plt.savefig(model_name+'_%i.pdf'%ind)
-            plt.clf()
+                plt.subplot(323)
+                plt.imshow(hf.unpad(batch_targets[ind,:].reshape(pad_size,pad_size)),aspect='auto')
+                plt.title('Targets')
+                plt.colorbar()
+                plt.subplot(324)
+                plt.imshow(hf.unpad(tf.reshape(tf.argmax(g[ind,:,:],axis=-1),[pad_size,pad_size]).eval()),aspect='auto')
+                plt.text(512,50,s=str(acc))
+                plt.title('Argmax')
+                plt.colorbar()
+                plt.subplot(313)
+                plt.imshow(hf.unpad(tf.reshape(hf.hard_thresh(g[ind,:,:]),[pad_size,pad_size]).eval()),aspect='auto')
+                plt.title('Hard Threshold')
+                plt.tight_layout()
+                plt.savefig(model_name+'_%i.pdf'%ind)
+                plt.clf()
+            
+#        for ind in range(200):
+            y_true = hf.unpad(batch_targets[ind,:].reshape(pad_size,pad_size)).reshape(-1)
+            y_pred = hf.unpad(g[ind,:,1].reshape(pad_size,pad_size)).reshape(-1)
+            
+            fpr,tpr,_ = roc_curve(y_true,y_pred,drop_intermediate=False)
+            print(np.shape(fpr))
+            if ct==0 and np.size(fpr) == 60*64:
+                fpr_arr = np.array(fpr).reshape(-1)
+                tpr_arr = np.array(tpr).reshape(-1)
+                ct+=1
+            elif np.size(fpr) == 60*64:
+                fpr_arr = np.vstack((fpr_arr,np.array(fpr).reshape(-1)))
+                tpr_arr = np.vstack((tpr_arr,np.array(tpr).reshape(-1)))
+                ct+=1
+            ind+=1
+        print(np.nanmean(fpr_arr,0))
+        print(np.nanmean(tpr_arr,0))
+
+        import h5py
+#        try:
+        f = h5py.File('ROC_curves.h5','a')
+        try:
+            mname = f.create_group(model_name)
+            mname.create_dataset('FPR',data=np.nanmean(fpr_arr,0))
+            mname.create_dataset('TPR',data=np.nanmean(tpr_arr,0))
+            mname.create_dataset('FPRstd',data=np.nanstd(fpr_arr,0))
+            mname.create_dataset('TPRstd',data=np.nanstd(tpr_arr,0))
+            f.close()
+        except:
+            print('Data group already exists.')
+            mname = f.require_group(model_name)
+            mname['FPR'][...] = np.nanmean(fpr_arr,0)
+            mname['TPR'][...] = np.nanmean(tpr_arr,0)
+            mname['FPRstd'][...] = np.nanstd(fpr_arr,0)
+            mname['TPRstd'][...] = np.nanstd(tpr_arr,0)
+            #mname.require_dataset('FPR',data=np.nanmean(fpr_arr,0),exact=False)
+            #mname.require_dataset('TPR',data=np.nanmean(tpr_arr,0),exact=False)
+            #mname.require_dataset('FPRstd',data=np.nanstd(fpr_arr,0),exact=False)
+            #mname.require_dataset('TPRstd',data=np.nanstd(tpr_arr,0),exact=False)
+            f.close()
+
+#        plt.plot(np.nanmean(fpr_arr,0),np.nanmean(tpr_arr,0))
+#        plt.savefig('ROC_'+model_name+'.pdf')
+#        plt.clf()
