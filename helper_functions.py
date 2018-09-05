@@ -27,10 +27,25 @@ def normphs(X):
     Normalization for the log amplitude required in the folding process.                                                                                                            
     """
     sh = np.shape(X)
-    phsX_ = np.angle(X)
-#    phsX_ = np.sin(phsX)#np.mod(phsX,np.pi)
-    return phsX_#(phsX_ - np.nanmean(phsX_))#/np.nanmax(np.abs(phsX_))
-    
+    phsX_ = np.sin(np.angle(X))#np.random.randn(*sh)
+    #phsX_ -= np.mean(phsX_)
+    return phsX_#/np.nanmax(np.abs(phsX_))
+
+def tfnormalize(X):
+    sh = np.shape(X)
+    mu,var = tf.nn.moments(X,axes=[1,2])
+    mu = tf.reshape(mu,[-1,1,1,sh[3]])
+#    var = tf.reshape(var,[-1,1,1,sh[3]])
+#    var = tf.where(tf.is_nan(var),tf.ones_like(var),var)
+#    var = tf.where(tf.is_inf(var),tf.ones_like(var),var)
+#    var = tf.where(var == 0.,tf.ones_like(var),var)
+    mu = tf.where(mu == np.nan,tf.zeros_like(mu),mu)
+    mu = tf.where(mu == np.inf,tf.zeros_like(mu),mu)
+    X_norm = X-mu
+#    X_norm /= tf.sqrt(tf.reduce_sum(X_norm**2))
+    X_norm = tf.where(tf.is_nan(X_norm),tf.zeros_like(X_norm),X_norm)
+    return X_norm
+
 def noisy_relu(x):
     try:
         mean,var = tf.nn.moments(x, axes=[1,2,3])
@@ -90,39 +105,44 @@ def unfoldl(data_fold,nchans=1024,ch_fold=16,padding=2):
     _data = data_.reshape(ch_fold*dfreqs,ntimes).T
     return _data
 
-def stacked_layer(input_layer,num_filter_layers,kt,kf,activation,stride,pool,bnorm=True,name='None',dropout=False,maxpool=True,mode=True):
+def stacked_layer(input_layer,num_filter_layers,kt,kf,activation,stride,pool,bnorm=True,name='None',dropout=None,maxpool=True,mode=True):
     """
     Creates a 3x stacked layer of convolutional layers. Each layer uses the same kernel size.
     Batch normalized output is default and recommended for faster convergence, although
     not every may require it (???).
     """
+#    try:
+#        dropout = dropout.eval()
+#        print('Dropout is set to '+str(dropout))
+#    except:
+#        dropout = 0.0
     conva = tf.layers.conv2d(inputs=input_layer,
                              filters=num_filter_layers,
                              kernel_size=[kt,kf],
                              padding="same",
                              activation=activation)
                             
-    if not dropout:
-        convb = tf.layers.conv2d(inputs=conva,
-                             filters=num_filter_layers,
-                             kernel_size=[kt,kf],
-                             padding="same",
-                             activation=activation)
-                            
-    else:
+    if dropout is not None:
         convb = tf.layers.dropout(tf.layers.conv2d(inputs=conva,
                              filters=num_filter_layers,
                              kernel_size=[kt,kf],
                              padding="same",
-                                                   activation=activation),rate=.7)
-                             
-        
+                                                   activation=activation), rate=dropout)                         
+    else:
+        convb = tf.layers.conv2d(inputs=conva,
+                             filters=num_filter_layers,
+                             kernel_size=[kt,kf],
+                             padding="same",
+                                                   activation=activation)
+    shb = convb.get_shape().as_list()
+
     convc = tf.layers.conv2d(inputs=convb,
                              filters=num_filter_layers,
                              kernel_size=[1,1],
                              padding="same",
                              activation=activation)
-                             
+#    convc = tf.layers.dense(convc,units=num_filter_layers,activation=activation)
+
     if bnorm:
     	#bnorm_conv = tf.contrib.layers.batch_norm(convc,scale=True)
         bnorm_conv = tf.layers.batch_normalization(convc,scale=True,center=True,training=mode,fused=True)
@@ -131,7 +151,7 @@ def stacked_layer(input_layer,num_filter_layers,kt,kf,activation,stride,pool,bno
     if maxpool:
         pool = tf.layers.max_pooling2d(inputs=bnorm_conv,
                                     pool_size=pool,
-                                    strides=stride)
+                                       strides=stride)
     else:
         pool = tf.layers.average_pooling2d(inputs=bnorm_conv,
                                            pool_size=pool,
@@ -154,7 +174,7 @@ def accuracy(labels,predictions):
     try:
         return correct/total
     except:
-        return 0.
+        return 1.
     
 def delay_transform(data,flags):
     sh = data.get_shape().as_list()
@@ -208,12 +228,15 @@ class RFIDataset():
         self.batch_size = batch_size
         print('A batch size of %i has been set.' % self.batch_size)
         f1 = h5py.File('RealVisRFI_v3.h5') # 'RealVisRFI_v3.h5','r') # Load in a real dataset
+        #f1 = h5py.File('IDR21TrainingData.h5','r')
         if tdset == 'v5':
             f2 = h5py.File('SimVis_v5.h5','r') # Load in simulated data
         elif tdset == 'v6':
             f2 = h5py.File('SimVis_v6_10000.h5','r')
         #    f2 = h5py.File('RealVisRFI_v3.h5','r')
-
+        elif tdset == 'v4':
+            f2 = h5py.File('SimVisRFI_15_120_v4.h5','r')
+        
         self.psize = psize # Pixel pad size for individual carved bands
         #fold_factor = 16 # Carving narrowband factor
 
@@ -232,7 +255,7 @@ class RFIDataset():
         print 'Size of real dataset: ',f1_r
         print ''
         # Cut up real dataset and labels
-        f1_r = 900#np.shape(f1['data'])[0] # Everything after 900 doesn't look good
+        #f1_r = np.shape(f1['data'])[0] # Everything after 900 doesn't look good
         samples = range(f1_r)
         rnd_ind = np.random.randint(0,f1_r)
         if cut:
@@ -332,7 +355,7 @@ class RFIDataset():
     def next_eval(self):
 #        self.eval_data = np.roll(self.eval_data,self.batch_size,axis=0)
 #        self.eval_labels = np.roll(self.eval_labels,self.batch_size,axis=0)
-        rand_batch = random.sample(range(self.eval_len),self.batch_size)#np.random.randint(0,self.eval_len,size=self.batch_size)
+        rand_batch = random.sample(range(self.eval_len),self.batch_size) #np.random.randint(0,self.eval_len,size=self.batch_size)
         return self.eval_data[rand_batch,:,:,:],self.eval_labels[rand_batch,:]
 
     def random_test(self,samples):
@@ -341,6 +364,8 @@ class RFIDataset():
             ch = 1
         elif self.chtypes == 'AmpPhs':
             ch = 2
+        elif self.chtypes == 'AmpPhs2':
+            ch = 3
         return self.eval_data[ind,:,:,:].reshape(samples,self.psize,self.psize,ch),self.eval_labels[ind,:].reshape(samples,self.psize*self.psize)
 
     
