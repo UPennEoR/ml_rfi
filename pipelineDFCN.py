@@ -21,7 +21,9 @@ from AmpPhsModel import AmpPhsFCN
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 args = sys.argv[1:]
 
+filename = '/Users/josh/Desktop/RFIMLDiverseDataset/zen.2458101.60274.xx.HH.uvSLIM'
 chtypes = 'AmpPhs'
+ch_input = 2
 FCN_version = 'v100'
 tdset_type = 'v00'
 edset_type = 'uv'
@@ -50,16 +52,13 @@ if chtypes == 'Amp':
 elif chtypes == 'AmpPhs':
     RFI_guess = AmpPhsFCN(vis_input,mode_bn=mode_bn,d_out=d_out)
 
-optimizer_gen = tf.train.AdamOptimizer(learning_rate=learn_rate[0])
-fcn_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='FCN')
-
 # Initialize the variables (i.e. assign their default value)                                                                                      
 init = tf.group(tf.global_variables_initializer(),tf.local_variables_initializer())
 
 # Load dataset
 dset = hf.RFIDataset()
 dset_start_time = time()
-dset.load_pyuvdata()
+dset.load_pyuvdata(filename)
 #dset.load(tdset_version,vdset,batch_size,pad_size,chtypes=chtypes)
 dset_load_time = (time() - dset_start_time)/dset.get_size() # per visibility
 

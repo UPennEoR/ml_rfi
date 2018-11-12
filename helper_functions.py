@@ -8,6 +8,7 @@ import pylab as plt
 from sklearn.metrics import confusion_matrix
 from scipy import ndimage
 import aipy
+import pyuvdata
 #np.random.seed()
 
 def transpose(X):
@@ -543,8 +544,9 @@ class RFIDataset():
     def load_pyuvdata(self,filename):
         uv = pyuvdata.UVData()
         uv.read_miriad(filename)
-        self.uv = copy(uv)
-        self.antpairs = copy(self.uv.get_antpairs())
+        self.uv = np.copy(uv)
+        self.antpairs = np.copy(uv.get_antpairs())
+        self.dset_size = 1
 
     def predict_pyuvdata(self):
         if self.chtypes == 'AmpPhs':
