@@ -67,7 +67,7 @@ print('Starting training at step %i' % start_step)
 
 def FCN(x, reuse=None, mode_bn=True, d_out=0.):
     with tf.variable_scope('FCN', reuse=reuse):
-        kt_ = 5#np.copy(ksize)
+        kt_ = 11#np.copy(ksize)
         kt = 3
         sh = x.get_shape().as_list()
         if sh[3] > 1.:
@@ -81,12 +81,14 @@ def FCN(x, reuse=None, mode_bn=True, d_out=0.):
         if sh[3] > 1:
             slayer1 = hf.stacked_layer(tf.reshape(input_layer[:,:,:,:1],[-1,sh[1],sh[2],1]),8*s,kt,kt,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
             #slayer2a = hf.stacked_layer(slayer1a,4*s,kt,kf,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
-            slayer1b = hf.stacked_layer(tf.reshape(input_layer[:,:,:,1],[-1,sh[1],sh[2],1]),8*s,kt_,kt_,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=True)
-            slayer2b = hf.stacked_layer(slayer1b,16*s,kt_,kt_,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=True)
-            slayer3b = hf.stacked_layer(slayer2b,32*s,kt_,kt_,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=True,dropout=0.)
-            slayer4b = tf.layers.dropout(hf.stacked_layer(slayer3b,64*s,kt_,kt_,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=True),rate=0.)
-            slayer5b = hf.stacked_layer(slayer4b,128*s,kt_,kt_,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=True,dropout=0.0)
-            slayer6b = hf.stacked_layer(slayer5b,256*s,kt_,kt_,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=True)
+            slayer1b = hf.stacked_layer(tf.reshape(input_layer[:,:,:,1],[-1,sh[1],sh[2],1]),8*s,kt_,kt_,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=False)
+            slayer2b = hf.stacked_layer(slayer1b,16*s,kt_,kt_,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=False)
+            slayer3b = hf.stacked_layer(slayer2b,32*s,kt_,kt_,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=False,dropout=0.)
+            slayer4b = tf.layers.dropout(hf.stacked_layer(slayer3b,64*s,kt_,kt_,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=False),rate=0.)
+            slayer5b = hf.stacked_layer(slayer4b,128*s,kt_,kt_,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=False,dropout=0.0)
+            slayer6b = hf.stacked_layer(slayer5b,256*s,kt_,kt_,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=False)
+            #slayer6b_ = hf.stacked_layer(slayer6b,512*s,kt_,kt_,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=False)
+            #slayer6b__ = hf.stacked_layer(slayer6b_,512*s,kt_,kt_,activation,[2,2],[2,2],bnorm=True,mode=mode_bn,maxpool=False)
             s3sh = slayer3b.get_shape().as_list()
             s6sh = slayer6b.get_shape().as_list()
             slayer7b = hf.stacked_layer(slayer6b,s*512,1,1,activation,[1,1],[1,1],bnorm=True,dropout=0.0,mode=mode_bn)
@@ -122,6 +124,7 @@ def FCN(x, reuse=None, mode_bn=True, d_out=0.):
         
         slayer6 = hf.stacked_layer(slayer5,s*256,kt,kt,activation,[2,2],[2,2],bnorm=True,mode=mode_bn)
         s6sh = slayer6.get_shape().as_list()
+        print(s6sh)
         # Fully connected and convolutional layers
 #        if sh[3] > 1.:
 #            slayer6 = tf.layers.dropout(tf.reduce_mean([slayer6,slayer6b],axis=0),rate=0.5)
@@ -486,7 +489,7 @@ with tf.Session() as sess:
             mcc_arr.append(mcc)
             acc_arr.append(acc)
             f2_arr.append(5.*tpr*fpr/(4.*fpr + tpr))
-            #np.savez('{0}_SamplePredict_{1}.npz'.format(chtypes,ct),data=data_,target=target_unfold,prediction=pred_unfold,f2=5.*tpr*fpr/(4.*fpr + tpr),recall=tpr,precision=fpr)#hf.hard_thresh2(pred_unfold,thresh=thresh),f2=5.*tpr*fpr/(4.*fpr + tpr),recall=tpr,precision=fpr)
+            np.savez('{0}_SamplePredict_{1}.npz'.format(chtypes,ct),data=data_,target=target_unfold,prediction=pred_unfold,f2=5.*tpr*fpr/(4.*fpr + tpr),recall=tpr,precision=fpr)#hf.hard_thresh2(pred_unfold,thresh=thresh),f2=5.*tpr*fpr/(4.*fpr + tpr),recall=tpr,precision=fpr)
 #            np.savez('{0}_SamplePredict.npz'.format(chtypes),data=data_,target=target_unfold,prediction=hf.hard_thresh2(pred_unfold,thresh=thresh),f2=5.*tpr*fpr/(4.*fpr + tpr),recall=tpr,precision=fpr)
 
             #if ct==0: #and np.size(fpr) == 60*64:
