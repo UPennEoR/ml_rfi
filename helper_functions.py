@@ -372,7 +372,7 @@ class RFIDataset():
         """
         print('Welcome to the HERA RFI training and evaluation dataset suite.')
 
-    def load(self,tdset,vdset,batch_size,psize,hybrid=False,chtypes='AmpPhs',fold_factor=16,cut=False,patchwise_train=False,expand=True):
+    def load(self,tdset,vdset,batch_size,psize,hybrid=False,chtypes='AmpPhs',fold_factor=16,cut=False,patchwise_train=False,expand=False,predict=False):
         # load data
         if cut:
             self.cut = 14
@@ -541,6 +541,19 @@ class RFIDataset():
             self.eval_len = np.shape(self.eval_data)[0]
             self.train_len = np.shape(self.train_data)[0]
 
+    def load_pyuvdata(self,filename):
+        uv = pyuvdata.UVData()
+        uv.read_miriad(filename)
+        self.uv = copy(uv)
+        self.antpairs = copy(self.uv.get_antpairs())
+
+    def predict_pyuvdata(self):
+        if self.chtypes == 'AmpPhs':
+            f_real = (np.array(fold(self.uv.get_data(self.antpairs.pop(0)),self.cut,2))[:,:,:,:2]).reshape(-1,self.psize,self.psize,2)
+        elif self.chtypes == 'Amp':
+            f_real = (np.array(fold(self.uv.get_data(self.antpairs.pop(0)),self.cut,2))[:,:,:,0]).reshape(-1,self.psize,self.psize,1)
+        return f_real
+            
     def next_train(self):
         rand_batch = random.sample(range(self.train_len),self.batch_size)
         return self.train_data[rand_batch,:,:,:],self.train_labels[rand_batch,:]
