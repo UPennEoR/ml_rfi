@@ -8,7 +8,6 @@ import pylab as plt
 from sklearn.metrics import confusion_matrix
 from scipy import ndimage
 import aipy
-import noise
 #np.random.seed()
 
 def transpose(X):
