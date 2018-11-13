@@ -1,10 +1,16 @@
 # ml_rfi
 A Deep Fully Convolutional Neural Net implementation in Tensorflow as applied to RFI flagging in waterfall visibilities.
+
 **run_analysis.sh** - Bash script for running runDFCN.py
+
 **runDFCN.py** - Neural net training and evaluation script.
+
 **pipelineDFCN.py** - Script for running strictly for prediction, mostly on pyuvdata datasets.
+
 **AmpMode.py** - Tensorflow model for amplitude input DFCN.
+
 **AmpPhsMode.py** - Tensorflow model for amplitude-phase input DFCN.
+
 **helper_functions.py** - Functions used for loading datasets and defining tensorflow objects used in the models.
 
 # Training Datasets
