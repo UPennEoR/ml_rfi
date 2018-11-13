@@ -30,8 +30,8 @@ edset_type = 'uv'
 tdset_version = 'v00'
 mods = 'test'
 pad_size = 68
-model_name = 'AmpPhsv9SimRealv13_64BSize_ExpandedDataset_Softmax_1x_DOUT0.8_Converge_teval' #chtypes+FCN_version+tdset_type+edset_type+tdset_version+'_'+'64'+'BSize'+mods
-#model_name = 'Ampv7SimRealv13_64BSize_ExpandedDataset_Softmax_1x_DOUT0.8_Converge_teval'
+#model_name = 'AmpPhsv9SimRealv13_64BSize_ExpandedDataset_Softmax_1x_DOUT0.8_Converge_teval' #chtypes+FCN_version+tdset_type+edset_type+tdset_version+'_'+'64'+'BSize'+mods
+model_name = 'AmpPhsv9SimRealv13_64BSizeNew'#'Ampv7SimRealv13_64BSize_ExpandedDataset_Softmax_1x_DOUT0.8_Converge_teval'
 model_dir = glob("./"+model_name+"/model_*")
 
 try:
@@ -78,21 +78,22 @@ with tf.Session() as sess:
     ind = 0
     print('N=%i number of baselines time: ' % 1,time() - time0)
     ct = 0
-    while ct < 99:
-#        batch_x = dset.predict_pyuvdata()
-        batch_x = np.random.randn(16,68,68,2)
-        print(np.shape(batch_x))
-        pred_start = time()
-        g = sess.run(RFI_guess, feed_dict={vis_input: batch_x, mode_bn: True})
-        print('Current Visibility: {0}'.format(ct))            
-        pred_unfold = hf.unfoldl(tf.reshape(tf.argmax(g,axis=-1),[16,68,68]).eval())
+#    while ct < 99:
+#    batch_x = np.array([dset.predict_pyuvdata() for i in range(dset.get_size()-1)]).reshape(-1,68,68,2)
+    batch_x = np.random.randn(16*1000,68,68,2)
+    print(np.shape(batch_x))
+    pred_start = time()
+    g = sess.run(RFI_guess, feed_dict={vis_input: batch_x, mode_bn: True})
+    print('Current Visibility: {0}'.format(ct))            
+    pred_unfold = map(hf.unfoldl,tf.reshape(tf.argmax(g,axis=-1),[-1,16,68,68]).eval())
         #pred_unfold = hf.unfoldl(tf.reshape(g[:,:,1],[16,68,68]).eval())
-        pred_time = time() - pred_start
-        if chtypes == 'AmpPhs':
-            thresh = 0.62 #0.329 real #0.08 sim 
-        else:
-            thresh = 0.385 #0.385 real #0.126 sim
-        y_pred = pred_unfold.reshape(-1,1024)
-        ct += 1
+    pred_time = time() - pred_start
+    if chtypes == 'AmpPhs':
+        thresh = 0.62 #0.329 real #0.08 sim 
+    else:
+        thresh = 0.385 #0.385 real #0.126 sim
+    y_pred = np.array(pred_unfold).reshape(-1,1024)
+    ct += 1
 #       y_pred = hf.hard_thresh(pred_unfold[:,64*ci_1:1024-64*ci_2],thresh=thresh).reshape(-1)
-    print('Total processing time: {0} mins'.format(((time() - time0)/60.)/99.))
+    print('Total processing time: {0} mins'.format(((time() - time0)/60.)/(5000.)))
+    print('Data throughput: {0} TB/h/gpu'.format(batch_x.nbytes/1e12))

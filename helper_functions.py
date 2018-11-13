@@ -235,7 +235,7 @@ def ROC_stats(ground_truth,logits):
     MCC_arr = []
     F2 = []
     for thresh in thresholds:
-        pred_ = hard_thresh2(logits,thresh=thresh).reshape(-1)
+        pred_ = hard_thresh(logits,thresh=thresh).reshape(-1)
         tn, fp, fn, tp = confusion_matrix(ground_truth,pred_).ravel()
         recall = tp/(1.*(tp+fn))
         precision = tp/(1.*(tp+fp))
@@ -342,7 +342,7 @@ def expand_validation_dataset(data,labels):
     Validation dataset augmentation trick for expanding a small dataset with a 
     well known ground truth.
     """
-    bloat = 5
+    bloat = 10
     sh = np.shape(data)
     out_data = []
     out_labels = []
@@ -547,7 +547,7 @@ class RFIDataset():
         uv.read_miriad(filename)
         self.uv = copy(uv)
         self.antpairs = copy(uv.get_antpairs())
-        self.dset_size = 1
+        self.dset_size = np.shape(self.uv.data_array)[0]/60
         self.chtypes = chtypes
         self.cut = 16
         self.psize = 68
@@ -555,7 +555,6 @@ class RFIDataset():
     def predict_pyuvdata(self):
         if self.chtypes == 'AmpPhs':
             f_real = (np.array(fold(self.uv.get_data(self.antpairs.pop(0)),self.cut,2))[:,:,:,:2]).reshape(-1,self.psize,self.psize,2)
-            print(np.shape(f_real))
         elif self.chtypes == 'Amp':
             f_real = (np.array(fold(self.uv.get_data(self.antpairs.pop(0)),self.cut,2))[:,:,:,0]).reshape(-1,self.psize,self.psize,1)
         return f_real

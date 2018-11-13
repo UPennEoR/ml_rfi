@@ -21,7 +21,7 @@ from AmpPhsModel import AmpPhsFCN
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 args = sys.argv[1:]
 
-stats = True
+stats = False
 waterfall_sample = False
 ROC = False
 
@@ -44,7 +44,7 @@ pad_size = 68
 ch_input = int(args[3])
 mode = args[4]
 expand = True
-patchwise_train = True #np.logical_not(bool(args[5]))
+patchwise_train = False #np.logical_not(bool(args[5]))
 hybrid=bool(args[5])
 chtypes=args[6]
 model_name = chtypes+FCN_version+tdset_type+edset_type+tdset_version+'_'+'64'+'BSize'+mods
@@ -248,7 +248,7 @@ with tf.Session() as sess:
         _MCC_ARR = []
         _F2_ARR = []
         best_thresh_arr = []
-        while ct != 1000:
+        while ct != 100:
             data_, batch_x, batch_targets = dset.next_predict()
             pred_start = time()
             g = sess.run(RFI_guess, feed_dict={vis_input: batch_x, mode_bn: True})
