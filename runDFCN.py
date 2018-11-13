@@ -37,13 +37,14 @@ except:
     vdset = ''
 tdset_type = 'Sim'        # type of training dataset used
 edset_type = 'Real'       # type of eval dataset used
-mods = 'test'#'_ExpandedDataset_Softmax_1x_DOUT'+str(dropout)+'_Converge_teval'
+mods = 'New' #'_ExpandedDataset_Softmax_1x_DOUT'+str(dropout)+'_Converge_teval'
 num_steps = int(args[9])
 batch_size = int(args[2])
 pad_size = 68
 ch_input = int(args[3])
 mode = args[4]
-patchwise_train = np.logical_not(bool(args[5]))
+expand = True
+patchwise_train = True #np.logical_not(bool(args[5]))
 hybrid=bool(args[5])
 chtypes=args[6]
 model_name = chtypes+FCN_version+tdset_type+edset_type+tdset_version+'_'+'64'+'BSize'+mods
@@ -108,7 +109,7 @@ saver = tf.train.Saver()
 # Load dataset
 dset = hf.RFIDataset()
 dset_start_time = time()
-dset.load(tdset_version,vdset,batch_size,pad_size,hybrid=hybrid,chtypes=chtypes,fold_factor=f_factor,cut=cut,patchwise_train=patchwise_train)
+dset.load(tdset_version,vdset,batch_size,pad_size,hybrid=hybrid,chtypes=chtypes,fold_factor=f_factor,cut=cut,patchwise_train=patchwise_train,expand=expand)
 dset_load_time = (time() - dset_start_time)/dset.get_size() # per visibility
 
 with tf.Session() as sess:    

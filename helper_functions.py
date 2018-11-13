@@ -9,6 +9,7 @@ from sklearn.metrics import confusion_matrix
 from scipy import ndimage
 import aipy
 import pyuvdata
+from copy import copy
 #np.random.seed()
 
 def transpose(X):
@@ -541,16 +542,20 @@ class RFIDataset():
             self.eval_len = np.shape(self.eval_data)[0]
             self.train_len = np.shape(self.train_data)[0]
 
-    def load_pyuvdata(self,filename):
+    def load_pyuvdata(self,filename,chtypes):
         uv = pyuvdata.UVData()
         uv.read_miriad(filename)
-        self.uv = np.copy(uv)
-        self.antpairs = np.copy(uv.get_antpairs())
+        self.uv = copy(uv)
+        self.antpairs = copy(uv.get_antpairs())
         self.dset_size = 1
-
+        self.chtypes = chtypes
+        self.cut = 16
+        self.psize = 68
+        
     def predict_pyuvdata(self):
         if self.chtypes == 'AmpPhs':
             f_real = (np.array(fold(self.uv.get_data(self.antpairs.pop(0)),self.cut,2))[:,:,:,:2]).reshape(-1,self.psize,self.psize,2)
+            print(np.shape(f_real))
         elif self.chtypes == 'Amp':
             f_real = (np.array(fold(self.uv.get_data(self.antpairs.pop(0)),self.cut,2))[:,:,:,0]).reshape(-1,self.psize,self.psize,1)
         return f_real

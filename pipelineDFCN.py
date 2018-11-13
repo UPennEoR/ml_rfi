@@ -21,7 +21,7 @@ from AmpPhsModel import AmpPhsFCN
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 args = sys.argv[1:]
 
-filename = '/Users/josh/Desktop/RFIMLDiverseDataset/zen.2458101.60274.xx.HH.uvSLIM'
+filename = './zen.2458099.30447.xx.HH.uvSLIM'
 chtypes = 'AmpPhs'
 ch_input = 2
 FCN_version = 'v100'
@@ -30,7 +30,8 @@ edset_type = 'uv'
 tdset_version = 'v00'
 mods = 'test'
 pad_size = 68
-model_name = chtypes+FCN_version+tdset_type+edset_type+tdset_version+'_'+'64'+'BSize'+mods
+model_name = 'AmpPhsv9SimRealv13_64BSize_ExpandedDataset_Softmax_1x_DOUT0.8_Converge_teval' #chtypes+FCN_version+tdset_type+edset_type+tdset_version+'_'+'64'+'BSize'+mods
+#model_name = 'Ampv7SimRealv13_64BSize_ExpandedDataset_Softmax_1x_DOUT0.8_Converge_teval'
 model_dir = glob("./"+model_name+"/model_*")
 
 try:
@@ -58,10 +59,10 @@ init = tf.group(tf.global_variables_initializer(),tf.local_variables_initializer
 # Load dataset
 dset = hf.RFIDataset()
 dset_start_time = time()
-dset.load_pyuvdata(filename)
+dset.load_pyuvdata(filename,chtypes)
 #dset.load(tdset_version,vdset,batch_size,pad_size,chtypes=chtypes)
 dset_load_time = (time() - dset_start_time)/dset.get_size() # per visibility
-
+saver = tf.train.Saver()
 with tf.Session() as sess:    
     # Run the initializer                                                                                                                         
     sess.run(init)
@@ -76,10 +77,11 @@ with tf.Session() as sess:
     time0 = time()
     ind = 0
     print('N=%i number of baselines time: ' % 1,time() - time0)
-    # Cut off band edges, it's in factors of 64
-    # Low: 1 and High: 1 is approx 13% of the band
-    while ct < 10:
-        batch_x = dset.predict_pyuvdata()
+    ct = 0
+    while ct < 99:
+#        batch_x = dset.predict_pyuvdata()
+        batch_x = np.random.randn(16,68,68,2)
+        print(np.shape(batch_x))
         pred_start = time()
         g = sess.run(RFI_guess, feed_dict={vis_input: batch_x, mode_bn: True})
         print('Current Visibility: {0}'.format(ct))            
@@ -90,6 +92,7 @@ with tf.Session() as sess:
             thresh = 0.62 #0.329 real #0.08 sim 
         else:
             thresh = 0.385 #0.385 real #0.126 sim
-        y_pred = pred_unfold[:,64*ci_1:1024-64*ci_2].reshape(-1)
+        y_pred = pred_unfold.reshape(-1,1024)
+        ct += 1
 #       y_pred = hf.hard_thresh(pred_unfold[:,64*ci_1:1024-64*ci_2],thresh=thresh).reshape(-1)
-
+    print('Total processing time: {0} mins'.format(((time() - time0)/60.)/99.))
