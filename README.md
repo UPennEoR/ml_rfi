@@ -6,15 +6,17 @@ A Deep Fully Convolutional Neural Net implementation in Tensorflow as applied to
 ## Simulated Data
 
 *SimVisRFI_15_120_v3.h5* - Contains 1000 simulated waterfall visibilities over baseline lengths of 15m to 120m. RFI includes
-                         stations and more spurious events (timescales >= 30).
+                         stations and more random events (timescales >= 30). Deprecated!!!
                          
 *SimVisRFI_v2.h5* - Contains 1000 simulated waterfall visibilities for one baseline type. RFI includes
-                  stations and speckled RFI.
+                  stations and speckled RFI. Deprecated!!!
                   
 *SimVisRFI_15_120_NoStations.h5* - Contains 300 simulated waterfall visibilities over baseline lengths of 15m to 120m. No RFI
                                  stations (e.g. ORBCOM), all RFI is randomly placed across all times & frequencies.
                                  Addittionaly includes randomized burst events where RFI is placed at all frequencies for a
-                                 time sample.
+                                 time sample. Deprecated!!!
+
+*SimVis_3000_v13.h5* - Amalgamation of several previous simulated training datasets, and the most recently used for training.
                                  
 ## Real Data
 Ground truth is NOT 100% certain for this dataset. It's based entirely on what XRFI perceives as RFI and is prone to
@@ -24,21 +26,27 @@ it's biases.
                    visibilities up to 900 look decent enough to train/evaluate on, however everything after this looks like 
                    it's been very poorly flagged by XRFI, i.e. missing ORBCOM !!!
 
+*IDR21TrainingData_Raw_vX.h5* - Small hand flagged dataset which should have a very well identified ground truth.
+
 
 # Training - Evaluation Strategies
 
-Ideally we want to train entirely on simulated data as we know with 100% certainty what the ground truth is, but 
-there may be the issue that our simulated data doesn't quite accurately reflect our real data (e.g. passband, RFI statistics)
+Training is performed using entirely simulated data from HERAsim across a wide range of baseline types, mock sky scenarios, and
+RFI instances.
+
+Evaluation is performed in two ways:
+1. Evaluate on 30% of unused training data to check for overfitting.
+2. Evaluate on real data. (e.g. IDR21TrainingData_Raw_vX.h5)
 
 ### Current strategy:
 
 Training dataset: 
 
-*SimVisRFI_15_120_v3.h5*
+*SimVis_3000_v13.h5*
 
 Evaluation dataset:
 
-*RealVisRFI_v3.h5*
+*IDR21TrainingData_Raw_vX.h5*
 
 
 # Accessing HPCs for Tensorboard
