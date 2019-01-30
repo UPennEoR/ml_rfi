@@ -229,7 +229,7 @@ def softmax(X):
 
 def ROC_stats(ground_truth,logits):
     ground_truth = np.reshape(ground_truth,[-1])
-    thresholds = np.logspace(-2,2,30)
+    thresholds = np.linspace(-1,4.,30)
     FPR = []
     TPR = []
     MCC_arr = []
@@ -250,8 +250,10 @@ def load_pipeline_dset(stage_type):
     """
     Additional loading function for specific evaluation datasets.
     """
+    #f = h5py.File('JK_5Jan2019.h5','r')
     f = h5py.File('IDR21TrainingData_Raw_vX.h5','r')
     #f = h5py.File('IDR21InitialFlags_v2.h5','r') 
+    #f = h5py.File('IDR21TrainingData_Raw_v2.h5')
     #f = h5py.File('IDR21TrainingData.h5','r')
     #f = h5py.File('RealVisRFI_v5.h5','r')
     #f = h5py.File('RawRealVis_v1.h5','r')
@@ -407,7 +409,8 @@ class RFIDataset():
             f2 = h5py.File('SimVis_2000_v12.h5','r')
         elif tdset == 'v13':
             # This is v9 + v11 + FineTune
-            f2 = h5py.File('SimVis_3000_v13.h5','r')
+            f2 = h5py.File('SimVis_2000_v911.h5','r') 
+#            f2 = h5py.File('SimVis_3000_v13.h5','r')
         elif tdset == 'v4':
             f2 = h5py.File('SimVisRFI_15_120_v4.h5','r')
             
@@ -554,7 +557,8 @@ class RFIDataset():
         
     def predict_pyuvdata(self):
         if self.chtypes == 'AmpPhs':
-            f_real = (np.array(fold(self.uv.get_data(self.antpairs.pop(0)),self.cut,2))[:,:,:,:2]).reshape(-1,self.psize,self.psize,2)
+            #f_real = (np.array(fold(self.uv.get_data(self.antpairs.pop(0)),self.cut,2))[:,:,:,:2]).reshape(-1,self.psize,self.psize,2)
+            f_real = (np.array(fold(self.uv.get_data((1,11)),self.cut,2))[:,:,:,:2]).reshape(-1,self.psize,self.psize,2)
         elif self.chtypes == 'Amp':
             f_real = (np.array(fold(self.uv.get_data(self.antpairs.pop(0)),self.cut,2))[:,:,:,0]).reshape(-1,self.psize,self.psize,1)
         return f_real

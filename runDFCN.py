@@ -22,7 +22,7 @@ os.environ["CUDA_VISIBLE_DEVICES"]="1"
 args = sys.argv[1:]
 
 stats = False
-waterfall_sample = False
+waterfall_sample = True
 ROC = False
 
 # Training Params
@@ -37,13 +37,14 @@ except:
     vdset = ''
 tdset_type = 'Sim'        # type of training dataset used
 edset_type = 'Real'       # type of eval dataset used
-mods = 'New' #'_ExpandedDataset_Softmax_1x_DOUT'+str(dropout)+'_Converge_teval'
+#mods = 'New'
+mods = '_ExpandedDataset_Softmax_1x_DOUT'+str(dropout)+'_Converge_teval'
 num_steps = int(args[9])
 batch_size = int(args[2])
 pad_size = 68
 ch_input = int(args[3])
 mode = args[4]
-expand = True
+expand = False
 patchwise_train = False #np.logical_not(bool(args[5]))
 hybrid=bool(args[5])
 chtypes=args[6]
@@ -248,19 +249,22 @@ with tf.Session() as sess:
         _MCC_ARR = []
         _F2_ARR = []
         best_thresh_arr = []
-        while ct != 100:
+        while ct != 18:
             data_, batch_x, batch_targets = dset.next_predict()
             pred_start = time()
             g = sess.run(RFI_guess, feed_dict={vis_input: batch_x, mode_bn: True})
-            print('Current Visibility: {0}'.format(ct))            
+            #print('Current Visibility: {0}'.format(ct))            
             pred_unfold = hf.unfoldl(tf.reshape(tf.argmax(g,axis=-1),[16,68,68]).eval())
-#            pred_unfold = hf.unfoldl(tf.reshape(g[:,:,1],[16,68,68]).eval())
+            #pred_unfold = hf.unfoldl(tf.reshape(g[:,:,1],[16,68,68]).eval())
+            pred_unfold_0 = hf.unfoldl(tf.reshape(g[:,:,0],[16,68,68]).eval())
+            pred_unfold_1 = hf.unfoldl(tf.reshape(g[:,:,1],[16,68,68]).eval())
+            pred_unfold_ = np.stack((pred_unfold_0,pred_unfold_1),axis=-1)
             pred_time = time() - pred_start
             target_unfold = hf.unfoldl(batch_targets.reshape(16,68,68))
             if chtypes == 'AmpPhs':
-                thresh = 0.62 #0.329 real #0.08 sim 
+                thresh = 0.329#0.62 #0.329 real #0.08 sim 
             else:
-                thresh = 0.385 #0.385 real #0.126 sim
+                thresh = 0.452#0.385 #0.385 real #0.126 sim
             y_true = target_unfold[:,64*ci_1:1024-64*ci_2].reshape(-1)
             y_pred = pred_unfold[:,64*ci_1:1024-64*ci_2].reshape(-1)
 #            y_pred = hf.hard_thresh(pred_unfold[:,64*ci_1:1024-64*ci_2],thresh=thresh).reshape(-1)
@@ -280,9 +284,12 @@ with tf.Session() as sess:
                 continue
             data_flux = np.abs(data_[:,64*ci_1:1024-64*ci_2])
             targets_ = target_unfold.reshape(-1,1024)[:,64*ci_1:1024-64*ci_2]
-            predicts_ = hf.unfoldl(tf.reshape(g[:,:,1],[16,68,68]).eval()).reshape(-1,1024)[:,64*ci_1:1024-64*ci_2]
-            tp_sum = np.sum(np.where(targets_+predicts_ == 2,data_flux,np.zeros_like(data_flux)))
-            fn_sum = np.sum(np.where(targets_-predicts_ == 1,data_flux,np.zeros_like(data_flux)))
+            #predicts_ = hf.unfoldl(tf.reshape(g[:,:,1],[16,68,68]).eval()).reshape(-1,1024)[:,64*ci_1:1024-64*ci_2]
+            predicts_0 = hf.unfoldl(tf.reshape(g[:,:,0],[16,68,68]).eval()).reshape(-1,1024)[:,64*ci_1:1024-64*ci_2]
+            predicts_1 = hf.unfoldl(tf.reshape(g[:,:,1],[16,68,68]).eval()).reshape(-1,1024)[:,64*ci_1:1024-64*ci_2]
+            predicts_ = predicts_1-predicts_0#np.where(predicts_1>predicts_0,predicts_1,0.)
+            tp_sum = 1.#np.sum(np.where(targets_+predicts_ == 2,data_flux,np.zeros_like(data_flux)))
+            fn_sum = 1.#np.sum(np.where(targets_-predicts_ == 1,data_flux,np.zeros_like(data_flux)))
             tpr = tp/(1.*(tp+fn)) #recall
             fpr = tp/(1.*(tp+fp)) #precision/pos predictive value
             npv = tn/(1.*(tn+fn)) #neg predictive value
@@ -300,7 +307,7 @@ with tf.Session() as sess:
             f2_arr.append(5.*tpr*fpr/(4.*fpr + tpr))
             # Save individual visibility samples that have been predicted on
             if waterfall_sample:
-                np.savez('{0}_SamplePredict_{1}.npz'.format(chtypes,ct),data=data_,target=target_unfold,prediction=pred_unfold,f2=5.*tpr*fpr/(4.*fpr + tpr),recall=tpr,precision=fpr)
+                np.savez('Real_{0}_SamplePredict_{1}.npz'.format(chtypes,ct),data=data_,target=target_unfold,prediction=pred_unfold_,f2=5.*tpr*fpr/(4.*fpr + tpr),recall=tpr,precision=fpr)
 #            np.savez('{0}_SamplePredict.npz'.format(chtypes),data=data_,target=target_unfold,prediction=hf.hard_thresh(pred_unfold,thresh=thresh),f2=5.*tpr*fpr/(4.*fpr + tpr),recall=tpr,precision=fpr)
 
             ind+=1
@@ -312,7 +319,7 @@ with tf.Session() as sess:
                 _MCC_ARR.append(MCC_)
                 _F2_ARR.append(F2_)
                 best_thresh_arr.append(best_thresh)
-                np.savez('ROC_curves_new_{0}.npz'.format(chtypes),TPR=_TPR_ARR,FPR=_FPR_ARR,MCC=_MCC_ARR,F2=_F2_ARR,best_thresh=np.nanmedian(best_thresh_arr))
+                np.savez('ROC_curves_newSim_{0}.npz'.format(chtypes),TPR=_TPR_ARR,FPR=_FPR_ARR,MCC=_MCC_ARR,F2=_F2_ARR,best_thresh=np.nanmedian(best_thresh_arr))
 
         print('Accuracy: {0}'.format(np.nanmean(acc_arr)))
         print('Precision: {0}'.format(np.nanmean(fpr_arr)))

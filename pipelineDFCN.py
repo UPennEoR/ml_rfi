@@ -21,7 +21,7 @@ from AmpPhsModel import AmpPhsFCN
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 args = sys.argv[1:]
 
-filename = './zen.2458099.30447.xx.HH.uvSLIM'
+filename = './zen.2458098.45361.xx.HH.uv'
 chtypes = 'AmpPhs'
 ch_input = 2
 FCN_version = 'v100'
@@ -31,7 +31,8 @@ tdset_version = 'v00'
 mods = 'test'
 pad_size = 68
 #model_name = 'AmpPhsv9SimRealv13_64BSize_ExpandedDataset_Softmax_1x_DOUT0.8_Converge_teval' #chtypes+FCN_version+tdset_type+edset_type+tdset_version+'_'+'64'+'BSize'+mods
-model_name = 'AmpPhsv9SimRealv13_64BSizeNew'#'Ampv7SimRealv13_64BSize_ExpandedDataset_Softmax_1x_DOUT0.8_Converge_teval'
+model_name = 'AmpPhsv9SimRealv13_64BSizeNew'
+#model_name = 'Ampv7SimRealv13_64BSize_ExpandedDataset_Softmax_1x_DOUT0.8_Converge_teval'
 model_dir = glob("./"+model_name+"/model_*")
 
 try:
@@ -79,21 +80,37 @@ with tf.Session() as sess:
     print('N=%i number of baselines time: ' % 1,time() - time0)
     ct = 0
 #    while ct < 99:
-#    batch_x = np.array([dset.predict_pyuvdata() for i in range(dset.get_size()-1)]).reshape(-1,68,68,2)
-    batch_x = np.random.randn(16*1000,68,68,2)
+    batch_x = np.array([dset.predict_pyuvdata() for i in range(1)]).reshape(-1,68,68,2)
+#    batch_x = np.random.randn(16*550,68,68,1)
     print(np.shape(batch_x))
     pred_start = time()
     g = sess.run(RFI_guess, feed_dict={vis_input: batch_x, mode_bn: True})
     print('Current Visibility: {0}'.format(ct))            
     pred_unfold = map(hf.unfoldl,tf.reshape(tf.argmax(g,axis=-1),[-1,16,68,68]).eval())
-        #pred_unfold = hf.unfoldl(tf.reshape(g[:,:,1],[16,68,68]).eval())
     pred_time = time() - pred_start
     if chtypes == 'AmpPhs':
         thresh = 0.62 #0.329 real #0.08 sim 
     else:
         thresh = 0.385 #0.385 real #0.126 sim
-    y_pred = np.array(pred_unfold).reshape(-1,1024)
+    y_pred = np.array(pred_unfold[0]).reshape(-1,1024)
+#    y_pred = hf.hard_thresh(y_pred,thresh=0.01)
+    print(np.min(y_pred))
+    print(np.mean(y_pred))
+    print(np.max(y_pred))
+    print(np.shape(y_pred))
+    data = dset.uv.get_data((1,11))
+    plt.subplot(311)
+    plt.imshow(np.log10(np.abs(data)),aspect='auto')
+    plt.subplot(312)
+    plt.imshow(y_pred,aspect='auto')
+    plt.colorbar()
+    plt.subplot(313)
+    plt.imshow(np.log10(np.abs(data)*np.logical_not(y_pred)),aspect='auto')
+#    plt.xlim(610,700)
+#    plt.ylim(38,34)
+    plt.savefig('AdamBMissedRFITest.png')
     ct += 1
 #       y_pred = hf.hard_thresh(pred_unfold[:,64*ci_1:1024-64*ci_2],thresh=thresh).reshape(-1)
-    print('Total processing time: {0} mins'.format(((time() - time0)/60.)/(5000.)))
-    print('Data throughput: {0} TB/h/gpu'.format(batch_x.nbytes/1e12))
+    process_time = ((time() - time0)/60.)
+    print('Total processing time: {0} mins'.format(process_time))
+    print('Data throughput: {0} Vis/h/gpu'.format(1100./(process_time/60.)))
