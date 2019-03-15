@@ -16,6 +16,8 @@ A Deep Fully Convolutional Neural Net implementation in Tensorflow as applied to
 
 `pyuvdata`
 
+# DEEP ML RFI Scripts
+
 **run_analysis.sh** - Bash script for running runDFCN.py
 
 **runDFCN.py** - Neural net training and evaluation script.
