@@ -5,17 +5,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from glob import glob
-import helper_functions as hf
+import ml_rfi.helper_functions as hf
 from time import time
 import os
 from sklearn.metrics import roc_curve
 from sklearn.metrics import confusion_matrix
-from statsmodels import robust
 import sys
 from copy import copy
 import h5py
-from AmpModel import AmpFCN
-from AmpPhsModel import AmpPhsFCN
+from ml_rfi.AmpModel import AmpFCN
+from ml_rfi.AmpPhsModel import AmpPhsFCN
 
 # Run on a single GPU
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
