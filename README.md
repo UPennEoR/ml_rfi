@@ -2,13 +2,19 @@
 A Deep Fully Convolutional Neural Net implementation in Tensorflow as applied to RFI flagging in waterfall visibilities.
 
 # Dependencies:
-*`numpy`
-*`scipy`
-*`h5py`
-*`keras`
-*`tensorflow`
-*`sklearn`
-*`pyuvdata`
+`numpy`
+
+`scipy`
+
+`h5py`
+
+`keras`
+
+`tensorflow`
+
+`sklearn`
+
+`pyuvdata`
 
 **run_analysis.sh** - Bash script for running runDFCN.py
 
