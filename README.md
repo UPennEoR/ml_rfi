@@ -1,7 +1,7 @@
 # ml_rfi
 A Deep Fully Convolutional Neural Net implementation in Tensorflow as applied to RFI flagging in waterfall visibilities.
 
-#Dependencies:
+# Dependencies:
 *`numpy`
 *`scipy`
 *`h5py`
@@ -56,7 +56,7 @@ Training is performed using entirely simulated data from HERAsim across a wide r
 RFI instances.
 
 Evaluation is performed in two ways:
-1. Evaluate on 30% of unused training data to check for overfitting.
+1. Evaluate on 20% of unused training data to check for overfitting.
 2. Evaluate on real data. (e.g. IDR21TrainingData_Raw_vX.h5)
 
 ### Current strategy:
