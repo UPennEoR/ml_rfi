@@ -10,7 +10,6 @@ from time import time
 import os
 from sklearn.metrics import roc_curve
 from sklearn.metrics import confusion_matrix
-from statsmodels import robust
 import sys
 from copy import copy
 import h5py

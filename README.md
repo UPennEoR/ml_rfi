@@ -1,6 +1,15 @@
 # ml_rfi
 A Deep Fully Convolutional Neural Net implementation in Tensorflow as applied to RFI flagging in waterfall visibilities.
 
+#Dependencies:
+*`numpy`
+*`scipy`
+*`h5py`
+*`keras`
+*`tensorflow`
+*`sklearn`
+*`pyuvdata`
+
 **run_analysis.sh** - Bash script for running runDFCN.py
 
 **runDFCN.py** - Neural net training and evaluation script.
@@ -59,8 +68,3 @@ Training dataset:
 Evaluation dataset:
 
 *IDR21TrainingData_Raw_vX.h5*
-
-
-# Accessing HPCs for Tensorboard
-## Bridges
-## Intrepid
