@@ -8,8 +8,6 @@ A Deep Fully Convolutional Neural Net implementation in Tensorflow as applied to
 
 `h5py`
 
-`keras`
-
 `tensorflow`
 
 `sklearn`
