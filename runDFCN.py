@@ -18,11 +18,14 @@ from AmpModel import AmpFCN
 from AmpPhsModel import AmpPhsFCN
 
 # Run on a single GPU
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+
 args = sys.argv[1:]
 
 stats = False
-waterfall_sample = True
+waterfall_sample = False
 ROC = False
 
 # Training Params
@@ -38,13 +41,14 @@ except:
 tdset_type = 'Sim'        # type of training dataset used
 edset_type = 'Real'       # type of eval dataset used
 #mods = 'New'
-mods = '_ExpandedDataset_Softmax_1x_DOUT'+str(dropout)+'_Converge_teval'
+#mods = '_ExpandedDataset_Softmax_1x_DOUT'+str(dropout)+'_Converge_teval'
+mods = 'DynamicVis'
 num_steps = int(args[9])
 batch_size = int(args[2])
-pad_size = 68
+pad_size = 16 #68
 ch_input = int(args[3])
 mode = args[4]
-expand = False
+expand = True
 patchwise_train = False #np.logical_not(bool(args[5]))
 hybrid=bool(args[5])
 chtypes=args[6]
@@ -55,7 +59,7 @@ if hybrid:
     f_factor = 16
 else:
     cut = False
-    f_factor = 16
+    f_factor = 16#16
 
 try:
     models2sort = [int(model_dir[i].split('/')[2].split('.')[0].split('_')[1]) for i in range(len(model_dir))]
@@ -68,7 +72,7 @@ except:
 
 print('Starting training at step %i' % start_step)
 
-vis_input = tf.placeholder(tf.float32, shape=[None, pad_size, pad_size, ch_input]) #this is a waterfall amp/phs/comp visibility      
+vis_input = tf.placeholder(tf.float32, shape=[None,None,None,ch_input])#shape=[None, 2*(pad_size+2)+60, 2*pad_size+1024/f_factor, ch_input]) #this is a waterfall amp/phs/comp visibility
 mode_bn = tf.placeholder(tf.bool)
 d_out = tf.placeholder(tf.float32)
 kernel_size = tf.placeholder(tf.int32)
@@ -78,7 +82,7 @@ if chtypes == 'Amp':
     RFI_guess = AmpFCN(vis_input,mode_bn=mode_bn,d_out=d_out)
 elif chtypes == 'AmpPhs':
     RFI_guess = AmpPhsFCN(vis_input,mode_bn=mode_bn,d_out=d_out)
-RFI_targets = tf.placeholder(tf.int32, shape=[None, pad_size*pad_size])
+RFI_targets = tf.placeholder(tf.int32, shape=[None,None])#(2*(pad_size+2)+60)*(2*pad_size+1024/f_factor)])
 learn_rate = tf.placeholder(tf.float32, shape=[1])
 
 # Output statistics and metrics
@@ -113,7 +117,7 @@ dset_start_time = time()
 dset.load(tdset_version,vdset,batch_size,pad_size,hybrid=hybrid,chtypes=chtypes,fold_factor=f_factor,cut=cut,patchwise_train=patchwise_train,expand=expand)
 dset_load_time = (time() - dset_start_time)/dset.get_size() # per visibility
 
-with tf.Session() as sess:    
+with tf.Session(config=config) as sess:    
     # Run the initializer                                                                                                                         
     sess.run(init)
     # Check to see if model exists                                                                                                                 
@@ -174,7 +178,7 @@ with tf.Session() as sess:
         # Preferred mode, where training and evaluation happens concurrently, saving
         # summary statistics for both training and evaluation modes
         batch_init = np.copy(batch_size)
-        lr = np.array([0.003])
+        lr = np.array([0.0003])
         train_writer = tf.summary.FileWriter('./'+model_name+'_train/',sess.graph)
         eval_writer = tf.summary.FileWriter('./'+model_name+'_eval_'+vdset+'/',sess.graph)
         for i in range(start_step, start_step+num_steps+1):
@@ -197,14 +201,22 @@ with tf.Session() as sess:
                 # Output training and evaluation F1 scores to terminal
                 print('Train F1 : %.9f' % f1_train)
                 print('Eval F1 : %.9f' % f1_eval)
-            if i % 1000 == 0 and i != 0:
+                print('Recall: {0}'.format(rec[0]))
+                print('Precision: {0}'.format(pre[0]))
+            if i % 5000 == 0 and i != 0:
                 # Save model every 1000 steps
                 print('Saving model...')
                 save_path = saver.save(sess,'./'+model_name+'/model_%i.ckpt' % i)
-            if i % 10000 == 0 and i != 0:
+                psize = np.random.choice([16,32])
+                fold_factor = np.random.choice([8,16,32])                
+                print('Using a fold factor of {0} and padding size of {1}'.format(fold_factor,psize))
+                print('Changing input dimensions to {0} x {1}'.format(64+2*psize,2*psize + 1024/fold_factor))
+                print('Subsampling time but padding back to 60 time ints.')
+                dset.reload(fold_factor,psize,time_subsample=True)
+            if i % 5000 == 0 and i != 0:
                 # Optional increasing/decreasing batch size, preferred over decreasing learning rate
                 # See https://arxiv.org/abs/1711.00489
-                batch_init = int(batch_init*1)
+                batch_init = int(batch_init*2)
                 dset.change_batch_size(new_bs=batch_init)
                 print('Decreasing batch size to {0}'.format(batch_init))
     else:
@@ -249,18 +261,19 @@ with tf.Session() as sess:
         _MCC_ARR = []
         _F2_ARR = []
         best_thresh_arr = []
+        ps = 96
         while ct != 18:
             data_, batch_x, batch_targets = dset.next_predict()
             pred_start = time()
             g = sess.run(RFI_guess, feed_dict={vis_input: batch_x, mode_bn: True})
             #print('Current Visibility: {0}'.format(ct))            
-            pred_unfold = hf.unfoldl(tf.reshape(tf.argmax(g,axis=-1),[16,68,68]).eval())
+            pred_unfold = hf.unfoldl(tf.reshape(tf.argmax(g,axis=-1),[16,ps,ps]).eval(),padding=16)
             #pred_unfold = hf.unfoldl(tf.reshape(g[:,:,1],[16,68,68]).eval())
-            pred_unfold_0 = hf.unfoldl(tf.reshape(g[:,:,0],[16,68,68]).eval())
-            pred_unfold_1 = hf.unfoldl(tf.reshape(g[:,:,1],[16,68,68]).eval())
+            pred_unfold_0 = hf.unfoldl(tf.reshape(g[:,:,0],[16,ps,ps]).eval(),padding=16)
+            pred_unfold_1 = hf.unfoldl(tf.reshape(g[:,:,1],[16,ps,ps]).eval(),padding=16)
             pred_unfold_ = np.stack((pred_unfold_0,pred_unfold_1),axis=-1)
             pred_time = time() - pred_start
-            target_unfold = hf.unfoldl(batch_targets.reshape(16,68,68))
+            target_unfold = hf.unfoldl(batch_targets.reshape(16,ps,ps),padding=16)
             if chtypes == 'AmpPhs':
                 thresh = 0.329#0.62 #0.329 real #0.08 sim 
             else:
@@ -285,8 +298,8 @@ with tf.Session() as sess:
             data_flux = np.abs(data_[:,64*ci_1:1024-64*ci_2])
             targets_ = target_unfold.reshape(-1,1024)[:,64*ci_1:1024-64*ci_2]
             #predicts_ = hf.unfoldl(tf.reshape(g[:,:,1],[16,68,68]).eval()).reshape(-1,1024)[:,64*ci_1:1024-64*ci_2]
-            predicts_0 = hf.unfoldl(tf.reshape(g[:,:,0],[16,68,68]).eval()).reshape(-1,1024)[:,64*ci_1:1024-64*ci_2]
-            predicts_1 = hf.unfoldl(tf.reshape(g[:,:,1],[16,68,68]).eval()).reshape(-1,1024)[:,64*ci_1:1024-64*ci_2]
+            predicts_0 = hf.unfoldl(tf.reshape(g[:,:,0],[16,ps,ps]).eval(),padding=16).reshape(-1,1024)[:,64*ci_1:1024-64*ci_2]
+            predicts_1 = hf.unfoldl(tf.reshape(g[:,:,1],[16,ps,ps]).eval(),padding=16).reshape(-1,1024)[:,64*ci_1:1024-64*ci_2]
             predicts_ = predicts_1-predicts_0#np.where(predicts_1>predicts_0,predicts_1,0.)
             tp_sum = 1.#np.sum(np.where(targets_+predicts_ == 2,data_flux,np.zeros_like(data_flux)))
             fn_sum = 1.#np.sum(np.where(targets_-predicts_ == 1,data_flux,np.zeros_like(data_flux)))
