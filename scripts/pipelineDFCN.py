@@ -82,9 +82,7 @@ with tf.Session() as sess:
     ind = 0
     print('N=%i number of baselines time: ' % 1,time() - time0)
     ct = 0
-#    while ct < 99:
     batch_x = dset.predict_pyuvdata()#np.array([dset.predict_pyuvdata() for i in range(1)]).reshape(-1,2*(pad_size+2)+60, 2*pad_size+1024/f_factor,2)
-#    batch_x = np.random.randn(16*550,68,68,1)
     print(np.shape(batch_x))
     pred_start = time()
     g = sess.run(RFI_guess, feed_dict={vis_input: batch_x, mode_bn: True})
@@ -96,22 +94,10 @@ with tf.Session() as sess:
     else:
         thresh = 0.385 #0.385 real #0.126 sim
     y_pred = np.array(pred_unfold[0]).reshape(-1,1024)
-#    y_pred = hf.hard_thresh(y_pred,thresh=0.01)
-    print(np.min(y_pred))
-    print(np.mean(y_pred))
-    print(np.max(y_pred))
-    print(np.shape(y_pred))
     data = dset.uv.get_data((1,11))
-#    plt.subplot(311)
-#    plt.imshow(np.log10(np.abs(data)),aspect='auto')
-#    plt.subplot(312)
-#    plt.imshow(y_pred,aspect='auto')
-#    plt.colorbar()
-#    plt.subplot(313)
+    
     plt.imshow(np.log10(np.abs(data)*np.logical_not(y_pred)),aspect='auto',vmin=-4,vmax=0.)
     plt.colorbar()
-#    plt.xlim(610,700)
-#    plt.ylim(38,34)
     plt.savefig('AdamBMissedRFITest.png')
     ct += 1
 #       y_pred = hf.hard_thresh(pred_unfold[:,64*ci_1:1024-64*ci_2],thresh=thresh).reshape(-1)
