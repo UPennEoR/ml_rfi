@@ -48,7 +48,7 @@ pad_size = 16 #68
 ch_input = int(args[3])
 mode = args[4]
 expand = True
-patchwise_train = False #np.logical_not(bool(args[5]))
+patchwise_train = False
 hybrid=bool(args[5])
 chtypes=args[6]
 model_name = chtypes+FCN_version+tdset_type+edset_type+tdset_version+'_'+'64'+'BSize'+mods
@@ -58,7 +58,7 @@ if hybrid:
     f_factor = 16
 else:
     cut = False
-    f_factor = 16#16
+    f_factor = 16
 
 try:
     models2sort = [int(model_dir[i].split('/')[2].split('.')[0].split('_')[1]) for i in range(len(model_dir))]
@@ -71,7 +71,7 @@ except:
 
 print('Starting training at step %i' % start_step)
 
-vis_input = tf.placeholder(tf.float32, shape=[None,None,None,ch_input])#shape=[None, 2*(pad_size+2)+60, 2*pad_size+1024/f_factor, ch_input]) #this is a waterfall amp/phs/comp visibility
+vis_input = tf.placeholder(tf.float32, shape=[None,None,None,ch_input])
 mode_bn = tf.placeholder(tf.bool)
 d_out = tf.placeholder(tf.float32)
 kernel_size = tf.placeholder(tf.int32)
@@ -81,7 +81,7 @@ if chtypes == 'Amp':
     RFI_guess = AmpFCN(vis_input,mode_bn=mode_bn,d_out=d_out)
 elif chtypes == 'AmpPhs':
     RFI_guess = AmpPhsFCN(vis_input,mode_bn=mode_bn,d_out=d_out)
-RFI_targets = tf.placeholder(tf.int32, shape=[None,None])#(2*(pad_size+2)+60)*(2*pad_size+1024/f_factor)])
+RFI_targets = tf.placeholder(tf.int32, shape=[None,None])
 learn_rate = tf.placeholder(tf.float32, shape=[1])
 
 # Output statistics and metrics
@@ -117,9 +117,11 @@ dset.load(tdset_version,vdset,batch_size,pad_size,hybrid=hybrid,chtypes=chtypes,
 dset_load_time = (time() - dset_start_time)/dset.get_size() # per visibility
 
 with tf.Session(config=config) as sess:    
-    # Run the initializer                                                                                                                         
+    # Run the initializer
+    
     sess.run(init)
-    # Check to see if model exists                                                                                                                 
+    # Check to see if model exists
+    
     if len(model_dir) > 0:
         print('Model exists. Loading last save.')
         saver.restore(sess, './'+model_name+'/'+model)
@@ -274,12 +276,13 @@ with tf.Session(config=config) as sess:
             pred_time = time() - pred_start
             target_unfold = hf.unfoldl(batch_targets.reshape(16,ps,ps),padding=16)
             if chtypes == 'AmpPhs':
-                thresh = 0.329#0.62 #0.329 real #0.08 sim 
+                thresh = 0.329
             else:
-                thresh = 0.452#0.385 #0.385 real #0.126 sim
+                thresh = 0.452
             y_true = target_unfold[:,64*ci_1:1024-64*ci_2].reshape(-1)
             y_pred = pred_unfold[:,64*ci_1:1024-64*ci_2].reshape(-1)
-#            y_pred = hf.hard_thresh(pred_unfold[:,64*ci_1:1024-64*ci_2],thresh=thresh).reshape(-1)
+            if False:
+                y_pred = hf.hard_thresh(pred_unfold[:,64*ci_1:1024-64*ci_2],thresh=thresh).reshape(-1)
 
             try:
                 # Build confusion matrix
@@ -320,7 +323,6 @@ with tf.Session(config=config) as sess:
             # Save individual visibility samples that have been predicted on
             if waterfall_sample:
                 np.savez('Real_{0}_SamplePredict_{1}.npz'.format(chtypes,ct),data=data_,target=target_unfold,prediction=pred_unfold_,f2=5.*tpr*fpr/(4.*fpr + tpr),recall=tpr,precision=fpr)
-#            np.savez('{0}_SamplePredict.npz'.format(chtypes),data=data_,target=target_unfold,prediction=hf.hard_thresh(pred_unfold,thresh=thresh),f2=5.*tpr*fpr/(4.*fpr + tpr),recall=tpr,precision=fpr)
 
             ind+=1
             ct+=1
