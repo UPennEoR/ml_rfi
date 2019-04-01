@@ -29,14 +29,11 @@ def normalize(X):
     return np.nan_to_num((LOGabsX-np.nanmean(LOGabsX))/np.nanstd(np.abs(LOGabsX)))
 
 def normphs(X):
-    """                                                                                                                                           
+    """                                                                                                                                        
     Normalization for the phase in the folding proces.
     """
     sh = np.shape(X)
-    
-#    diff = [np.sin(np.angle(X[:,i+1])) - np.sin(np.angle(X[:,i])) for i in range(sh[1]-1)]
-#    diff.append(np.sin(np.angle(X[:,-1])) - np.sin(np.angle(X[:,-2])))
-    return np.array(np.sin(np.angle(X)))#np.array(diff).T
+    return np.array(np.sin(np.angle(X)))
 
 def tfnormalize(X):
     """
@@ -53,7 +50,7 @@ def foldl(data,ch_fold=16,padding=2):
     sh = np.shape(data)
     _data = data.T.reshape(ch_fold,sh[1]/ch_fold,-1)
     _DATA = np.array(map(transpose,_data))
-    _DATApad = np.array(map(np.pad,_DATA,len(_DATA)*[((padding+2,padding+2),(padding,padding))],len(_DATA)*['reflect']))#np.array(map(pad,_DATA))
+    _DATApad = np.array(map(np.pad,_DATA,len(_DATA)*[((padding+2,padding+2),(padding,padding))],len(_DATA)*['reflect']))
     return _DATApad
 
 def pad(data,padding=2):
@@ -72,7 +69,7 @@ def unpad(data,diff=4,padding=2):
     """
     sh = np.shape(data)
     t_unpad = sh[0]
-    return data[padding[0]:sh[0]-padding[0],padding[1]:sh[1]-padding[1]]#data[padding/2+diff/2:,padding:][:-padding/2-diff/2,:-padding][padding/2:,:][:-padding/2,:]
+    return data[padding[0]:sh[0]-padding[0],padding[1]:sh[1]-padding[1]]
                       
 def fold(data,ch_fold=16,padding=2):
     """
@@ -84,7 +81,7 @@ def fold(data,ch_fold=16,padding=2):
     sh = np.shape(data)
     _data = data.T.reshape(ch_fold,sh[1]/ch_fold,-1)
     _DATA = np.array(map(transpose,_data))
-    _DATApad = np.array(map(np.pad,_DATA,len(_DATA)*[((padding+2,padding+2),(padding,padding))],len(_DATA)*['reflect']))#np.array(map(pad,_DATA))
+    _DATApad = np.array(map(np.pad,_DATA,len(_DATA)*[((padding+2,padding+2),(padding,padding))],len(_DATA)*['reflect']))
     DATA = np.stack((np.array(map(normalize,_DATApad)),np.array(map(normphs,_DATApad)),np.mod(np.array(map(normphs,_DATApad)),np.pi)),axis=-1)
     return DATA
 
@@ -140,7 +137,6 @@ def stacked_layer(input_layer,num_filter_layers,kt,kf,activation,stride,pool,bno
                              padding="same",
                              activation=activation)
     if bnorm:
-    	#bnorm_conv = tf.contrib.layers.batch_norm(convc,scale=True,center=True)
         bnorm_conv = tf.layers.batch_normalization(convc,scale=True,center=True,training=mode,fused=True)
     else:
     	bnorm_conv = convc
@@ -431,10 +427,9 @@ class RFIDataset():
         f1_sub = np.random.choice(f1_len)
         f2_len = len(f2['data'])
         
-        f1_r = int(f1_len)#np.shape(f1['data'][np.random.choice(range())])[0]
-        f2_s = int(f2_len)#np.shape(f2['data'])[0]
-        #if expand:
-        #    f2_s*=2
+        f1_r = int(f1_len)
+        f2_s = int(f2_len)
+
         f_factor_r = f1_r*[fold_factor]
         pad_r = f1_r*[self.psize]
         f_factor_s = f2_s*[fold_factor]
@@ -446,9 +441,7 @@ class RFIDataset():
         # Cut up real dataset and labels
         samples = range(f1_r)
         rnd_ind = np.random.randint(0,f1_r)
-        #if expand:
-        #    data_real,labels_real = expand_validation_dataset(f1['data'][:f1_r,:,:],f1['flag'][:f1_r,:,:])
-        #else:
+
         dreal_choice = np.random.choice(range(0,f1_len),size=f1_r)
         dsim_choice = np.random.choice(range(0,f2_len),size=f2_s)
         data_real = np.array(f1['data'])[dreal_choice][:f1_r,:,:]
@@ -593,7 +586,6 @@ class RFIDataset():
             #f_sim,f_sim_labels = expand_dataset(f_sim,f_sim_labels)
             
         sim_len = np.shape(f_sim)[0]
-#        real_sh = np.shape(f_real)
         sim_sh = np.shape(f_sim)
         print('Sim Shape',sim_sh)
         self.eval_data = np.asarray(f_sim[int(sim_len*.8):,:,:,:],dtype=d_type).reshape(-1,sim_sh[1],sim_sh[2],2)
