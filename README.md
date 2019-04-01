@@ -2,17 +2,17 @@
 A Deep Fully Convolutional Neural Net implementation in Tensorflow as applied to RFI flagging in waterfall visibilities.
 
 # Dependencies:
-`numpy`
+`numpy 1.14`
 
-`scipy`
+`scipy 1.0`
 
-`h5py`
+`h5py 2.7`
 
-`tensorflow`
+`tensorflow 1.8`
 
-`sklearn`
+`sklearn 0.19`
 
-`pyuvdata`
+`pyuvdata 1.2`
 
 # DEEP ML RFI Scripts
 
