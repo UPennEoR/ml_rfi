@@ -20,13 +20,13 @@ Dependent software versions specified here work with the current iteration of ml
 
 **run_analysis.sh** - Bash script for running runDFCN.py
 
-**runDFCN.py** - Neural net training and evaluation script.
+**runDFCN.py** - Neural net training and evaluation script which takes input model type and runs through batch training/evaluation.
 
-**pipelineDFCN.py** - Script for running strictly for prediction, mostly on pyuvdata datasets.
+**pipelineDFCN.py** - Script for strictly running for prediction in some type of pipeline, functionality is based on pyuvdata datasets but has some support for other types.
 
-**AmpMode.py** - Tensorflow model for amplitude input DFCN.
+**AmpModel.py** - Tensorflow model for amplitude input DFCN.
 
-**AmpPhsMode.py** - Tensorflow model for amplitude-phase input DFCN.
+**AmpPhsModel.py** - Tensorflow model for amplitude-phase input DFCN.
 
 **helper_functions.py** - Functions used for loading datasets and defining tensorflow objects used in the models.
 
