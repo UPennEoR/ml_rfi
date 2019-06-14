@@ -5,16 +5,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from glob import glob
-import ml_rfi.helper_functions as hf
+import sys
+sys.path.append('./ml_rfi/')
+print(sys.path)
+import helper_functions as hf
 from time import time
 import os
 from sklearn.metrics import roc_curve
 from sklearn.metrics import confusion_matrix
-import sys
 from copy import copy
 import h5py
-from ml_rfi.AmpModel import AmpFCN
-from ml_rfi.AmpPhsModel import AmpPhsFCN
+from AmpModel import AmpFCN
+from AmpPhsModel import AmpPhsFCN
 
 # Run on a single GPU
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
@@ -183,29 +185,38 @@ with tf.Session(config=config) as sess:
         train_writer = tf.summary.FileWriter('./'+model_name+'_train/',sess.graph)
         eval_writer = tf.summary.FileWriter('./'+model_name+'_eval_'+vdset+'/',sess.graph)
         for i in range(start_step, start_step+num_steps+1):
-            batch_x_train, batch_targets_train = dset.next_train()
-            feed_dict_train = {vis_input: batch_x_train, RFI_targets: batch_targets_train,
+            dset.permute_dset() # Permute dataset order prior to an epoch of training
+            # Do a single pass through of the training data (multiple passes through validation data)
+            train_loss = []
+            val_loss = []
+            f1_train_arr = []
+            f1_val_arr = []
+            for j in range(dset.get_size()/batch_init):
+                batch_x_train, batch_targets_train = dset.next_train()
+                feed_dict_train = {vis_input: batch_x_train, RFI_targets: batch_targets_train,
                                                   learn_rate: lr, mode_bn: True}
-            _,loss_,strain,rec,pre,f1_train,ba = sess.run([train_fcn,loss,summary,recall,precision,f1,batch_accuracy],feed_dict=feed_dict_train)
-            if i % 20 == 0:
-                # Add training stats to summary and then roll into evaluation and do the same
-                train_writer.add_summary(strain,i)
-                train_writer.flush()
+                _,loss_,strain,rec,pre,f1_train,ba = sess.run([train_fcn,loss,summary,recall,precision,f1,batch_accuracy],feed_dict=feed_dict_train)
 
                 batch_x_eval, batch_targets_eval = dset.next_eval()
                 feed_dict_eval = {vis_input: batch_x_eval, RFI_targets: batch_targets_eval, mode_bn: True}
-                eval_class,rec,pre,f1_eval,seval = sess.run([RFI_guess,recall,precision,f1,summary],feed_dict=feed_dict_eval)
-                eval_writer.add_summary(seval,i)
-                eval_writer.flush()
+                eval_class,loss_eval,rec,pre,f1_eval,seval = sess.run([RFI_guess,loss,recall,precision,f1,summary],feed_dict=feed_dict_eval)
+
+                train_loss.append(loss_)
+                val_loss.append(loss_eval)
+                f1_train_arr.append(f1_train)
+                f1_val_arr.append(f1_eval)
                 
-            if i % 100 == 0 or i == 1:
-                # Output training and evaluation F1 scores to terminal
-                print('Train F1 : %.9f' % f1_train)
-                print('Eval F1 : %.9f' % f1_eval)
-                print('Recall: {0}'.format(rec[0]))
-                print('Precision: {0}'.format(pre[0]))
-            if i % 5000 == 0 and i != 0:
-                # Save model every 1000 steps
+            # Add training stats to summary and then roll into evaluation and do the same                                                                           
+            train_writer.add_summary(strain,i)
+            train_writer.flush()
+            eval_writer.add_summary(seval,i)
+            eval_writer.flush()
+            
+            # Output training and evaluation F1 scores to terminal
+            print('Train loss : {0} ---- Validation loss : {1}'.format(np.mean(train_loss),np.mean(val_loss)))
+            print('Train F1 : {0} ---- Validation F1 : {1}'.format(np.mean(f1_train_arr),np.mean(f1_val_arr)))
+            if i % 100 == 0 and i != 0:
+                # Save model every 100 epochs
                 print('Saving model...')
                 save_path = saver.save(sess,'./'+model_name+'/model_%i.ckpt' % i)
                 psize = np.random.choice([16,32])

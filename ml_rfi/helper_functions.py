@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import numpy as np
 import tensorflow as tf
 import h5py
@@ -386,6 +387,7 @@ class RFIDataset():
             self.cut = 16
         self.chtypes = chtypes
         self.batch_size = batch_size
+        self.iter_ct = 0
         self.pred_ct = 0 #257
         print('A batch size of %i has been set.' % self.batch_size)
 
@@ -617,12 +619,25 @@ class RFIDataset():
         return f_real
             
     def next_train(self):
-        rand_batch = random.sample(range(self.train_len),self.batch_size)
-        return self.train_data[rand_batch,:,:,:],self.train_labels[rand_batch,:]
+        if self.iter_ct == 0:
+            self.indices = np.array(range(self.dset_size)).reshape(-1,self.batch_size)
+        elif self.iter_ct >= self.dset_size/self.batch_size:
+            self.iter_ct = 0
+        else:
+            batch_inds = self.indices[self.iter_ct,:]
+            self.iter_ct += 1
+
+        return self.train_data[batch_inds,:,:,:],self.train_labels[batch_inds,:]
 
     def change_batch_size(self,new_bs):
         self.batch_size = new_bs
     
+    def permute_dset(self):
+        indices = range(len(self.train_data))
+        perm_indices = np.permute(indices)
+        self.train_data = self.train_data[perm_indices]
+        self.train_labels = self.train_labels[perm_indices]
+
     def next_eval(self):
         rand_batch = random.sample(range(self.eval_len),self.batch_size)
         return self.eval_data[rand_batch,:,:,:],self.eval_labels[rand_batch,:]

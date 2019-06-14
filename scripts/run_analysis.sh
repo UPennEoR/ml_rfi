@@ -8,8 +8,8 @@ if [ $analysis = "tversion" ];then
     n_version0='v7' # Amplitude-Phase neural net version
     n_version1='v9' # Amplitude Only neural net version
     echo "Running amplitude-phase training, evaluation, and analysis."
-#    python runDFCN.py $d_version $n_version1 64 2 'traineval' '' 'AmpPhs' 0.8 3 200000 ''
-     python runDFCN.py $d_version $n_version1 32 2 '' False 'AmpPhs' 0.8 3 100 'uv'
+    python runDFCN.py $d_version $n_version1 64 2 'traineval' '' 'AmpPhs' 0.8 3 200000 ''
+#     python runDFCN.py $d_version $n_version1 32 2 '' False 'AmpPhs' 0.8 3 100 'uv'
 #    python runDFCN.py $d_version $n_version1 32 2 '' False 'AmpPhs' 0.8 3 100 '' 
 
     echo "Running amplitude training, evaluation, and analysis."
