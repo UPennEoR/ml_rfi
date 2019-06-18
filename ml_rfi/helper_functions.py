@@ -1,4 +1,5 @@
 from __future__ import absolute_import
+from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 import h5py
@@ -438,8 +439,8 @@ class RFIDataset():
         pad_s = f2_s*[self.psize]
         self.dset_size = np.copy(f1_r)+np.copy(f2_s)
         self.fold_factor = fold_factor
-        print 'Size of real dataset: ',f1_r
-        print ''
+        print('Size of real dataset: ',f1_r)
+        print('')
         # Cut up real dataset and labels
         samples = range(f1_r)
         rnd_ind = np.random.randint(0,f1_r)
@@ -504,11 +505,11 @@ class RFIDataset():
             f_sim = (np.array(map(fold,data_sim,f_factor_s,pad_s)).reshape(-1,self.psize,self.psize,1))
             f_sim_labels = np.array(map(foldl,labels_sim,f_factor_s,pad_s)).reshape(-1,self.psize,self.psize)
             
-        print 'Training dataset loaded.'
-        print 'Training dataset size: ',np.shape(f_real)
+        print('Training dataset loaded.')
+        print('Training dataset size: ',np.shape(f_real))
 
-        print 'Simulated training dataset loaded.'
-        print 'Training dataset size: ',np.shape(f_sim)
+        print('Simulated training dataset loaded.')
+        print('Training dataset size: ',np.shape(f_sim))
         
         real_sh = np.shape(f_real)
 
