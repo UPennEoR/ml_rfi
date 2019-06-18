@@ -119,14 +119,14 @@ def stacked_layer(input_layer,num_filter_layers,kt,kf,activation,stride,pool,bno
     if dropout is not None:
         convb = tf.layers.dropout(tf.layers.conv2d(inputs=conva,
                              filters=num_filter_layers,
-                             kernel_size=[kt-2,kt-2],
+                             kernel_size=[kt,kt],
                              strides=[1,1],
                              padding="same",
                                                    activation=activation), rate=dropout)                         
     else:
         convb = tf.layers.conv2d(inputs=conva,
                              filters=num_filter_layers,
-                             kernel_size=[kt-2,kt-2],
+                             kernel_size=[kt,kt],
                              strides=[1,1],
                              padding="same",
                                                    activation=activation)
@@ -314,7 +314,7 @@ def expand_dataset(data,labels):
     when applied to real data.
     Bloat factor is how large to increase the dataset size.
     """
-    bloat = 1
+    bloat = 5
     sh = np.shape(data)
     out_data = []
     out_labels = []
@@ -474,7 +474,8 @@ class RFIDataset():
             else:
                 f_sim = (np.array(map(fold,data_sim,f_factor_s,pad_s))[:,:,:,:,:2]).reshape(-1,2*(self.psize+2)+60,2*self.psize+1024/fold_factor,2)
                 f_sim_labels = np.array(map(foldl,labels_sim,f_factor_s,pad_s)).reshape(-1,2*(self.psize+2)+60,2*self.psize+1024/fold_factor)
-                f_sim,f_sim_labels = expand_dataset(f_sim,f_sim_labels)
+                if expand:
+                    f_sim,f_sim_labels = expand_dataset(f_sim,f_sim_labels)
                 del(data_sim)
                 del(labels_sim)
         elif chtypes == 'AmpPhs2' :
@@ -579,7 +580,8 @@ class RFIDataset():
             f_sim = (np.array(map(fold,data_sim,f_factor_s,pad_s))[:,:,:,:,:2]).reshape(-1,2*(psize+2)+60,2*psize+1024/fold_factor,2)
             f_sim_labels = np.array(map(foldl,labels_sim,f_factor_s,pad_s)).reshape(-1,2*(psize+2)+60,2*psize+1024/fold_factor)
             print('Permuting dataset along time and frequency.')
-            f_sim,f_sim_labels = expand_dataset(f_sim,f_sim_labels)
+            if expand:
+                f_sim,f_sim_labels = expand_dataset(f_sim,f_sim_labels)
         else:
 #            f_real = (np.array(map(fold,self.data_real,f_factor_r,pad_r))[:,:,:,:,:2]).reshape(-1,2*(psize+2)+60,2*psize+1024/fold_factor,2)
 #            f_real_labels = np.array(map(foldl,self.labels_real,f_factor_r,pad_r)).reshape(-1,2*(psize+2)+60,2*psize+1024/fold_factor)
@@ -623,9 +625,9 @@ class RFIDataset():
             self.indices = np.array(range(self.dset_size)).reshape(-1,self.batch_size)
         elif self.iter_ct >= self.dset_size/self.batch_size:
             self.iter_ct = 0
-        else:
-            batch_inds = self.indices[self.iter_ct,:]
-            self.iter_ct += 1
+        
+        batch_inds = self.indices[self.iter_ct,:]
+        self.iter_ct += 1
 
         return self.train_data[batch_inds,:,:,:],self.train_labels[batch_inds,:]
 
@@ -634,7 +636,7 @@ class RFIDataset():
     
     def permute_dset(self):
         indices = range(len(self.train_data))
-        perm_indices = np.permute(indices)
+        perm_indices = np.random.permutation(indices)
         self.train_data = self.train_data[perm_indices]
         self.train_labels = self.train_labels[perm_indices]
 

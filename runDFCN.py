@@ -181,9 +181,13 @@ with tf.Session(config=config) as sess:
         # Preferred mode, where training and evaluation happens concurrently, saving
         # summary statistics for both training and evaluation modes
         batch_init = np.copy(batch_size)
-        lr = np.array([0.0003])
+        lr = np.array([0.003])
         train_writer = tf.summary.FileWriter('./'+model_name+'_train/',sess.graph)
         eval_writer = tf.summary.FileWriter('./'+model_name+'_eval_'+vdset+'/',sess.graph)
+        avg_loss_t = []
+        avg_loss_v = []
+        avg_f1_t = []
+        avg_f1_v = []
         for i in range(start_step, start_step+num_steps+1):
             dset.permute_dset() # Permute dataset order prior to an epoch of training
             # Do a single pass through of the training data (multiple passes through validation data)
@@ -191,7 +195,7 @@ with tf.Session(config=config) as sess:
             val_loss = []
             f1_train_arr = []
             f1_val_arr = []
-            for j in range(dset.get_size()/batch_init):
+            for j in range(int(dset.get_size()/batch_init)):
                 batch_x_train, batch_targets_train = dset.next_train()
                 feed_dict_train = {vis_input: batch_x_train, RFI_targets: batch_targets_train,
                                                   learn_rate: lr, mode_bn: True}
@@ -211,26 +215,48 @@ with tf.Session(config=config) as sess:
             train_writer.flush()
             eval_writer.add_summary(seval,i)
             eval_writer.flush()
-            
+
+            avg_loss_t.append(np.mean(train_loss))
+            avg_loss_v.append(np.mean(val_loss))
+            avg_f1_t.append(np.mean(f1_train_arr))
+            avg_f1_v.append(np.mean(f1_val_arr))
+
             # Output training and evaluation F1 scores to terminal
-            print('Train loss : {0} ---- Validation loss : {1}'.format(np.mean(train_loss),np.mean(val_loss)))
-            print('Train F1 : {0} ---- Validation F1 : {1}'.format(np.mean(f1_train_arr),np.mean(f1_val_arr)))
+            print('Epoch {0} | Train loss : {1} ---- Validation loss : {2}'.format(i,np.mean(train_loss),np.mean(val_loss)))
+            print('            Train F1   : {1} ---- Validation F1   : {2}'.format(i,np.mean(f1_train_arr),np.mean(f1_val_arr)))
             if i % 100 == 0 and i != 0:
                 # Save model every 100 epochs
                 print('Saving model...')
                 save_path = saver.save(sess,'./'+model_name+'/model_%i.ckpt' % i)
-                psize = np.random.choice([16,32])
-                fold_factor = np.random.choice([8,16,32])                
-                print('Using a fold factor of {0} and padding size of {1}'.format(fold_factor,psize))
-                print('Changing input dimensions to {0} x {1}'.format(64+2*psize,2*psize + 1024/fold_factor))
-                print('Subsampling time but padding back to 60 time ints.')
-                dset.reload(fold_factor,psize,time_subsample=True)
-            if i % 5000 == 0 and i != 0:
+#                psize = np.random.choice([16,32])
+#                fold_factor = np.random.choice([8,16,32])                
+#                print('Using a fold factor of {0} and padding size of {1}'.format(fold_factor,psize))
+#                print('Changing input dimensions to {0} x {1}'.format(64+2*psize,2*psize + 1024/fold_factor))
+#                print('Subsampling time but padding back to 60 time ints.')
+#                dset.reload(fold_factor,psize,time_subsample=True)
+            if i % 50000 == 0 and i != 0:
                 # Optional increasing/decreasing batch size, preferred over decreasing learning rate
                 # See https://arxiv.org/abs/1711.00489
                 batch_init = int(batch_init*2)
                 dset.change_batch_size(new_bs=batch_init)
                 print('Decreasing batch size to {0}'.format(batch_init))
+
+        # plot the per epoch loss and f1 scores
+        plt.subplot(211)
+        plt.semilogy(range(num_steps+1),avg_loss_t,label='Training')
+        plt.semilogy(range(num_steps+1),avg_loss_v,label='Validation')
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
+        plt.legend()
+        
+        plt.subplot(212)
+        plt.plot(range(num_steps+1),avg_f1_t,label='Training')
+        plt.plot(range(num_steps+1),avg_f1_v,label='Validation')
+        plt.xlabel('Epochs')
+        plt.ylabel('F1 Score')
+        plt.legend()
+        plt.savefig(model_name+'_per_epoch.png')
+
     else:
         # If no mode is specified it jumps into ensemble stats mode which is for understanding
         # how well the network performs on non-simulated data

@@ -17,7 +17,7 @@ from ml_rfi.AmpModel import AmpFCN
 from ml_rfi.AmpPhsModel import AmpPhsFCN
 
 # Run on a single GPU
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
 args = sys.argv[1:]
 
 filename = '../zen.2458098.45361.xx.HH.uv'
