@@ -24,13 +24,15 @@ setup_args = {
     "scripts": glob.glob("scripts/*"),
     "version": __version,
     "include_package_data": True,
-    "install_requires": ["tensorflow"],
-    "classifiers": ["Development Status :: 3 - Alpha",
-                    "Intended Audience :: Science/Research",
-                    "License :: OSI Approved :: BSD License",
-                    "Programming Language :: Python :: 3.7",
-                    "Topic :: Scientific/Engineering :: Astronomy"],
-    "keywords": "radio astronomy machine learning"
+    "install_requires": ["numpy", "tensorflow", "scikit-learn", "h5py", "scipy"],
+    "classifiers": [
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: Science/Research",
+        "License :: OSI Approved :: BSD License",
+        "Programming Language :: Python :: 3.7",
+        "Topic :: Scientific/Engineering :: Astronomy",
+    ],
+    "keywords": "radio astronomy machine learning",
 }
 
 if __name__ == "__main__":
