@@ -810,6 +810,7 @@ class RFIDataset:
 
     def load_pyuvdata(self, filename, chtypes, fold_factor, psize):
         from pyuvdata import UVData
+
         uv = UVData()
         uv.read_miriad(filename)
         self.uv = copy(uv)
