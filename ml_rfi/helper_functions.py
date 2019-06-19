@@ -11,7 +11,6 @@ from time import time
 import random
 from sklearn.metrics import confusion_matrix
 from scipy import ndimage
-from pyuvdata import UVData
 from copy import copy
 
 
@@ -505,7 +504,7 @@ class RFIDataset:
         self.chtypes = chtypes
         self.batch_size = batch_size
         self.iter_ct = 0
-        self.pred_ct = 0  # 257
+        self.pred_ct = 0
         print("A batch size of %i has been set." % self.batch_size)
 
         if vdset == "vanilla":
@@ -532,8 +531,6 @@ class RFIDataset:
         elif tdset == "v13":
             # This is v9 + v11 + FineTune
             f2 = h5py.File("SimVis_2000_v911.h5", "r")
-        #            f2 = h5py.File('SimVis_3000_v13.h5','r')
-        #            f2 = h5py.File('SimVis_1000_v11.h5','r')
         elif tdset == "v4":
             f2 = h5py.File("SimVisRFI_15_120_v4.h5", "r")
 
@@ -598,7 +595,6 @@ class RFIDataset:
                 f_sim_labels = np.array(map(foldl, labels_sim)).reshape(
                     -1, self.psize, self.psize
                 )
-                # f_sim,f_sim_labels = expand_dataset(f_sim,f_sim_labels)
                 print("Expanded training dataset size: {0}".format(np.shape(f_sim)))
             else:
                 f_sim = (
@@ -650,7 +646,6 @@ class RFIDataset:
                 f_sim_labels = np.array(map(foldl, labels_sim)).reshape(
                     -1, self.psize, self.psize
                 )
-                # f_sim,f_sim_labels = expand_dataset(f_sim,f_sim_labels)
             else:
                 f_sim = (
                     np.array(map(fold, data_sim, f_factor_s, pad_s))[:, :, :, :, 0]
@@ -766,8 +761,6 @@ class RFIDataset:
             t1 = np.random.randint(40, 60)
             pad_t0 = t0
             pad_t1 = 60 - t1
-            #            data_real = np.pad(self.data_real[:,t0:t1,:,:],((0,0),(pad_t0,pad_t1),(0,0),(0,0)),mode='constant')
-            #            labels_real = np.pad(self.labels_real[:,t0:t1,:],((0,0),(pad_t0,pad_t1),(0,0)),mode='constant')
             data_sim = np.pad(
                 self.data_sim[dsim_choice][:, t0:t1, :],
                 ((0, 0), (pad_t0, pad_t1), (0, 0)),
@@ -778,8 +771,6 @@ class RFIDataset:
                 ((0, 0), (pad_t0, pad_t1), (0, 0)),
                 mode="reflect",
             )
-            #            f_real = (np.array(map(fold,data_real,f_factor_r,pad_r))[:,:,:,:,:2]).reshape(-1,2*(psize+2)+60,2*psize+1024/fold_factor,2)
-            #            f_real_labels = np.array(map(foldl,labels_real,f_factor_r,pad_r)).reshape(-1,2*(psize+2)+60,2*psize+1024/fold_factor)
             f_sim = (
                 np.array(map(fold, data_sim, f_factor_s, pad_s))[:, :, :, :, :2]
             ).reshape(-1, 2 * (psize + 2) + 60, 2 * psize + 1024 / fold_factor, 2)
@@ -790,15 +781,12 @@ class RFIDataset:
             if expand:
                 f_sim, f_sim_labels = expand_dataset(f_sim, f_sim_labels)
         else:
-            #            f_real = (np.array(map(fold,self.data_real,f_factor_r,pad_r))[:,:,:,:,:2]).reshape(-1,2*(psize+2)+60,2*psize+1024/fold_factor,2)
-            #            f_real_labels = np.array(map(foldl,self.labels_real,f_factor_r,pad_r)).reshape(-1,2*(psize+2)+60,2*psize+1024/fold_factor)
             f_sim = (
                 np.array(map(fold, self.data_sim, f_factor_s, pad_s))[:, :, :, :, :2]
             ).reshape(-1, 2 * (psize + 2) + 60, 2 * psize + 1024 / fold_factor, 2)
             f_sim_labels = np.array(
                 map(foldl, self.labels_sim, f_factor_s, pad_s)
             ).reshape(-1, 2 * (psize + 2) + 60, 2 * psize + 1024 / fold_factor)
-            # f_sim,f_sim_labels = expand_dataset(f_sim,f_sim_labels)
 
         sim_len = np.shape(f_sim)[0]
         sim_sh = np.shape(f_sim)
@@ -821,19 +809,19 @@ class RFIDataset:
         self.train_len = np.shape(self.train_data)[0]
 
     def load_pyuvdata(self, filename, chtypes, fold_factor, psize):
+        from pyuvdata import UVData
         uv = UVData()
         uv.read_miriad(filename)
         self.uv = copy(uv)
         self.antpairs = copy(uv.get_antpairs())
         self.dset_size = np.shape(self.uv.data_array)[0] / 60
         self.chtypes = chtypes
-        self.fold_factor = fold_factor  # 16
-        self.psize = psize  # 68
+        self.fold_factor = fold_factor
+        self.psize = psize
 
     def predict_pyuvdata(self):
         if self.chtypes == "AmpPhs":
             print(np.shape(self.uv.get_data((1, 11))))
-            # f_real = (np.array(fold(self.uv.get_data(self.antpairs.pop(0)),self.cut,2))[:,:,:,:2]).reshape(-1,self.psize,self.psize,2)
             f_real = (
                 np.array(fold(self.uv.get_data((1, 11)), self.fold_factor, self.psize))[
                     :, :, :, :2
