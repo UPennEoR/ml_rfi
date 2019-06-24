@@ -72,13 +72,11 @@ def pad(data, padding=2):
     Padding function applied to folded spectral windows.
     Reflection is default padding.
     """
+    
     sh = np.shape(data)
-    t_pad = (sh[1] - sh[0]) / 2
-    data_pad = np.pad(
-        data,
-        pad_width=((t_pad + padding, t_pad + padding), (padding, padding)),
-        mode="reflect",
-    )
+    t_pad = 16#(sh[1] - sh[0]) / 2
+    data_pad = np.pad(data,pad_width=((t_pad + 2, t_pad + 2), (t_pad, t_pad)),mode='reflect')
+    
     return data_pad
 
 
@@ -91,6 +89,15 @@ def unpad(data, diff=4, padding=2):
     return data[padding[0] : sh[0] - padding[0], padding[1] : sh[1] - padding[1]]
 
 
+
+def store_iterator(it):
+    a = []
+    for x in it:
+        a.append(x)
+    
+    return np.array(a)
+
+
 def fold(data, ch_fold=16, padding=2):
     """
     Folding function for carving waterfall visibilities with additional normalized log 
@@ -99,26 +106,20 @@ def fold(data, ch_fold=16, padding=2):
     Output: (Batch*FoldFactor, Time, Reduced Frequency, Channels) 
     """
     sh = np.shape(data)
-    _data = data.T.reshape(ch_fold, sh[1] / ch_fold, -1)
-    _DATA = np.array(map(transpose, _data))
-    _DATApad = np.array(
-        map(
-            np.pad,
-            _DATA,
-            len(_DATA) * [((padding + 2, padding + 2), (padding, padding))],
-            len(_DATA) * ["reflect"],
-        )
-    )
+    _data = data.T.reshape(ch_fold, int(sh[2] / ch_fold), -1)
+    _DATA = store_iterator(map(transpose,_data))
+    _DATApad = store_iterator(map(pad, _DATA))
+        
     DATA = np.stack(
         (
-            np.array(map(normalize, _DATApad)),
-            np.array(map(normphs, _DATApad)),
-            np.mod(np.array(map(normphs, _DATApad)), np.pi),
+            store_iterator(map(normalize, _DATApad)),
+            store_iterator(map(normphs, _DATApad)),
+            np.mod(store_iterator(map(normphs, _DATApad)), np.pi)
         ),
-        axis=-1,
+        axis=-1
     )
+    
     return DATA
-
 
 def unfoldl(data_fold, ch_fold=16, padding=2):
     """
@@ -127,17 +128,17 @@ def unfoldl(data_fold, ch_fold=16, padding=2):
     Input: (Batch*FoldFactor, Time, Reduced Frequency, Channels)
     Output: (Batch, Time, Frequency)
     """
-    data_unpad = np.array(
-        map(
+    
+    data_unpad = store_iterator(map(
             unpad,
             data_fold,
             len(data_fold) * [ch_fold],
             len(data_fold) * [(padding + 2, padding)],
         )
     )
-    print("Unpad shape", np.shape(data_unpad))
+    #print("Unpad shape", np.shape(data_unpad))
     ch_fold, ntimes, dfreqs = np.shape(data_unpad)
-    data_ = np.array(map(transpose, data_unpad))
+    data_ = store_iterator(map(transpose, data_unpad))
     _data = data_.reshape(ch_fold * dfreqs, ntimes).T
     return _data
 
