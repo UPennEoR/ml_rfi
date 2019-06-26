@@ -9,6 +9,9 @@ from ml_rfi.amp_phs_model import AmpPhsFCN
 from time import time
 
 class Predictor:
+    """
+    Class for making a prediction given a data filename and a CNN model
+    """
     
     def __init__(self, filename, CNN_model, ch_input = 2,
                  pad_size = 16, f_factor = 16,
@@ -24,11 +27,19 @@ class Predictor:
         self.uvd = UVData()
 
     def check_antennas(self):
+        """
+        Method for checking the available antennas
+        """
         self.uvd.read_uvh5(self.filename, read_data = False)
         print("Antenna Options: ")
         print(np.unique(self.uvd.ant_1_array))
 
     def pick_antennas(self, antenna_array = [], pick_all = False):
+        """
+        Method for loading the data from the desired antennas
+        Input: Array with the desired antenna numbers 
+               (not neccessary if pick_all = True)
+        """
         if (pick_all):
             self.uvd.read_uvh5(self.filename, read_data = False)
             self.selected_ants = np.unique(self.uvd.ant_1_array)
@@ -38,6 +49,11 @@ class Predictor:
         self.uvd.read_uvh5(self.filename, antenna_nums=self.selected_ants)
 
     def prepare_input(self, ants = [], all_antennas = False):
+        """
+        Method for processing the data before feeding them to the CNN
+        Input: Array with the desired antenna numbers 
+               (not neccessary if all_antennas = True)
+        """
         if (all_antennas):
             ants = self.selected_ants
         
@@ -67,11 +83,20 @@ class Predictor:
         return np.asarray(wf_data)
     
     def visualize_input(self, wfs):
+        """
+        Method for making a graph for the input data
+        Input: The visibility data array
+        """
         for i in range(len(wfs)):
             plt.subplot(len(wfs), 1, i+1)
             plt.imshow(np.log10(np.abs(wfs[i, 0, :, :])), aspect="auto")
 
     def make_prediction(self, wfs):
+        """
+        Main method for performing the CNN prediction
+        Input: The visibility data array
+        Output: The flag data array
+        """
         output = []
         # create variables for the input, output, and kernel
         vis_input = tf.placeholder(tf.float32, shape=[None, None, None, self.ch_input])
@@ -87,12 +112,16 @@ class Predictor:
             sess.run(init)
             savr.restore(sess, self.CNN_model)
             for i in range(len(wfs)):
+                #fold the input data
                 batch_x = (np.array(hf.fold(wfs[i, :, :, :],self.f_factor, self.pad_size))[:,:,:,:2]).reshape(-1,2*(self.pad_size+2)+60,int(2*self.pad_size+1024/self.f_factor),2)
                 time0 = time()
                 ind = 0
                 ct = 0
                 pred_start = time()
+                
+                #perform the actual prediction
                 g = sess.run(RFI_guess, feed_dict={vis_input: batch_x, mode_bn: True})
+                #unfold the prediction data
                 pred_unfold = hf.store_iterator(
                     map(hf.unfoldl,tf.reshape(tf.argmax(g,axis=-1),
                     [-1,int(self.f_factor),int(2*(self.pad_size+2)+60),
@@ -103,13 +132,20 @@ class Predictor:
                     thresh = 0.62
                 else:
                     thresh = 0.385
-
+                
+                #store the prediction data
                 y_pred = np.array(pred_unfold[0]).reshape(-1,1024)
                 output.append(y_pred)
                 
         return np.asarray(output)
         
-    def visualize_output(self, wfs, flags, in_data = False):
+    def visualize_output(self, flags, wfs = [], in_data = False):
+        """
+        Method for visualizing the output data (with or without the input data)
+        Input: The predicted flag data
+               The visibility data (not necessary if in_data = False)
+               
+        """
         if (in_data):
             in_counter = 0
             out_counter = 0
