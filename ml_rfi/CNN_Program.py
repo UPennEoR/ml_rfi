@@ -8,23 +8,97 @@ from ml_rfi.amp_model import AmpFCN
 from ml_rfi.amp_phs_model import AmpPhsFCN
 from time import time
 
+
+def visualize_output(uvd, in_data = False):
+        """
+        Method for visualizing the output data (with or without the input 
+                                                data)
+        Input: The PyUVData object with the data and the corresponding flags
+               
+        """
+        
+        iterator = uvd.antpairpol_iter()
+        wfs = []
+        for x in iterator:
+            wfs.append(x)
+        
+        wfs = np.asarray(wfs)
+        
+        
+        if (in_data):
+            plt.rcParams.update({'font.size': 36})
+            plt.figure(figsize=(6*len(wfs), 19*len(wfs)))
+            in_counter = 0
+            out_counter = 0
+            
+            for i in range(2*len(wfs)):
+                if (i % 2 == 0):
+                    plt.subplot(len(wfs), 2, i+1)
+                    plt.imshow(np.log10(np.abs(wfs[in_counter, 1])), aspect="auto")
+                    plt.xlabel(wfs[in_counter, 0])
+                    plt.colorbar()
+                    in_counter += 1
+                    
+                else:
+                    plt.subplot(len(wfs), 2, i+1)
+                    plt.imshow(np.log10(np.abs(wfs[out_counter, 1]) *np.logical_not(uvd.get_flags(wfs[out_counter, 0], force_copy = True))), aspect='auto',vmin=-4,vmax=0.)
+                    plt.xlabel(wfs[out_counter, 0])
+                    plt.colorbar()
+                    out_counter += 1
+                
+            
+        else:
+            plt.rcParams.update({'font.size': 32})
+            plt.figure(figsize=(3*len(wfs), 6*len(wfs)))
+            iterator = uvd.antpairpol_iter()
+            counter = 0
+            for key, data in iterator:
+                plt.subplot(len(wfs)/2, 2, counter+1)
+                plt.imshow(np.log10(np.abs(data) *np.logical_not(uvd.get_flags(key, force_copy = True))), aspect='auto',vmin=-4,vmax=0.)
+                plt.xlabel(key)
+                plt.colorbar()
+                counter += 1
+                
+                
+                
+def visualize_input(uvd):
+    """
+    Method for making a graph for the input data
+    Input: The PyUVData object with the input data
+    """
+    num_of_ants = 0
+    iterator = uvd.antpairpol_iter()
+    for x in iterator:
+        num_of_ants += 1
+        
+    plt.rcParams.update({'font.size': 30})
+    counter = 0
+    plt.figure(figsize=(3*num_of_ants, 6*num_of_ants))
+    iterator = uvd.antpairpol_iter()
+    for key, data in iterator:
+        plt.subplot(num_of_ants/2, 2, counter+1)
+        plt.imshow(np.log10(np.abs(data)), aspect="auto")
+        plt.colorbar()
+        plt.xlabel(key)
+        counter += 1
+
+
 class Predictor:
     """
     Class for making a prediction given a data filename and a CNN model
     """
     
-    def __init__(self, filename, CNN_model, ch_input = 2,
+    def __init__(self, uvd, filename, CNN_model, ch_input = 2,
                  pad_size = 16, f_factor = 16,
                  chtypes = 'AmpPhs'):
+        self.uvd = uvd
         self.filename = filename
         self.ch_input = ch_input
         self.CNN_model = CNN_model
         self.pad_size = pad_size
         self.f_factor = f_factor
         self.chtypes = chtypes
-
-        # Create a PyUVData object to store the input data
-        self.uvd = UVData()
+        
 
     def check_antennas(self):
         """
@@ -34,70 +108,35 @@ class Predictor:
         print("Antenna Options: ")
         print(np.unique(self.uvd.ant_1_array))
 
-    def pick_antennas(self, antenna_array = [], pick_all = False):
+    def pick_antennas(self):
         """
-        Method for loading the data from the desired antennas
-        Input: Array with the desired antenna numbers 
-               (not neccessary if pick_all = True)
+        Method for loading the data in a PyUVData object
         """
-        if (pick_all):
-            self.uvd.read_uvh5(self.filename, read_data = False)
-            self.selected_ants = np.unique(self.uvd.ant_1_array)
-        else:
-            self.selected_ants = antenna_array
-            
-        self.uvd.read_uvh5(self.filename, antenna_nums=self.selected_ants)
-
-    def prepare_input(self, ants = [], all_antennas = False):
-        """
-        Method for processing the data before feeding them to the CNN
-        Input: Array with the desired antenna numbers 
-               (not neccessary if all_antennas = True)
-        """
-        if (all_antennas):
-            ants = self.selected_ants
-        
-        ant1 = ants.tolist()
-        ant2 = ants.tolist()
-        num_comb = len(ants) * (len(ants) - 1)/2
-        stored_data = []
-        wf_data = np.zeros([int(num_comb),1 , 60, 1024])
-
+        self.uvd.read_uvh5(self.filename, read_data = False)
+        self.uvd.read_uvh5(self.filename, antenna_nums = [1, 50, 120])
+        iterator = self.uvd.antpairpol_iter()
+        wfs = []
         counter = 0
-        for i in range(len(ants)):
-            for j in range(len(ant2)):
-                if (ant1[0] == ant2[j]):
-                    continue
-                
-                if ((ant1[0], ant2[j]) in stored_data):
-                    continue
-                
-                temp = self.uvd.get_data(ant1[0], ant2[j])[:, :, 0]
-                stored_data.append((ant1[0], ant2[j]))
-                stored_data.append((ant2[j], ant1[0]))
-                
-                wf_data[counter] = temp.reshape(1,temp.shape[0],temp.shape[1])
-                counter += 1
-            ant1.remove(ant1[0])
+        for x in iterator:
+            wfs.append(x)
+            counter += 1
+        
+        self.numants = counter
+        return np.asarray(wfs)
 
-        return np.asarray(wf_data)
-    
-    def visualize_input(self, wfs):
-        """
-        Method for making a graph for the input data
-        Input: The visibility data array
-        """
-        for i in range(len(wfs)):
-            plt.subplot(len(wfs), 1, i+1)
-            plt.imshow(np.log10(np.abs(wfs[i, 0, :, :])), aspect="auto")
-
-    def make_prediction(self, wfs):
+    def make_prediction(self):
         """
         Main method for performing the CNN prediction
-        Input: The visibility data array
-        Output: The flag data array
         """
-        output = []
+        wfs = self.pick_antennas()
+        
+        # make a list to contain the visibilities for each of the 4 
+        # polarizations
+        prev_pred0 = []
+        prev_pred1 = []
+        prev_pred2 = []
+        prev_pred3 = []
+        
         # create variables for the input, output, and kernel
         vis_input = tf.placeholder(tf.float32, shape=[None, None, None, self.ch_input])
         mode_bn = tf.placeholder(tf.bool)
@@ -112,8 +151,11 @@ class Predictor:
             sess.run(init)
             savr.restore(sess, self.CNN_model)
             for i in range(len(wfs)):
+                sh = wfs[i][1].shape
+                temp = wfs[i][1].reshape(1,sh[0],sh[1])
+                
                 #fold the input data
-                batch_x = (np.array(hf.fold(wfs[i, :, :, :],self.f_factor, self.pad_size))[:,:,:,:2]).reshape(-1,2*(self.pad_size+2)+60,int(2*self.pad_size+1024/self.f_factor),2)
+                batch_x = (np.array(hf.fold(temp,self.f_factor, self.pad_size))[:,:,:,:2]).reshape(-1,2*(self.pad_size+2)+60,int(2*self.pad_size+1024/self.f_factor),2)
                 time0 = time()
                 ind = 0
                 ct = 0
@@ -135,35 +177,48 @@ class Predictor:
                 
                 #store the prediction data
                 y_pred = np.array(pred_unfold[0]).reshape(-1,1024)
-                output.append(y_pred)
                 
-        return np.asarray(output)
+                # categorize the predictions in each polarization
+                if i%4 == 0:
+                    if len(prev_pred0) == 0:
+                        prev_pred0 = y_pred
+                    else:
+                        prev_pred0 = np.concatenate((prev_pred0, y_pred), axis = 0)
+                
+                elif i%4 == 1:
+                    if len(prev_pred1) == 0:
+                        prev_pred1 = y_pred
+                    else:
+                        prev_pred1 = np.concatenate((prev_pred1, y_pred), axis = 0)
+                        
+                elif i%4 == 2:
+                    if len(prev_pred2) == 0:
+                        prev_pred2 = y_pred
+                    else:
+                        prev_pred2 = np.concatenate((prev_pred2, y_pred), axis = 0)
+                    
+                elif i%4 == 3:
+                    if len(prev_pred3) == 0:
+                        prev_pred3 = y_pred
+                    else:
+                        prev_pred3 = np.concatenate((prev_pred3, y_pred), axis = 0)
         
-    def visualize_output(self, flags, wfs = [], in_data = False):
-        """
-        Method for visualizing the output data (with or without the input data)
-        Input: The predicted flag data
-               The visibility data (not necessary if in_data = False)
-               
-        """
-        if (in_data):
-            in_counter = 0
-            out_counter = 0
-            for i in range(len(flags) * 2):
-                plt.subplot(len(wfs), 2, i+1)
-                if (i % 2 == 0):
-                    plt.imshow(np.log10(np.abs(wfs[in_counter, 0, :, :])), 
-                               aspect="auto")
-                    in_counter += 1
-                else:
-                    plt.imshow(np.log10(np.abs(wfs[out_counter, 0, :, :]) 
-                                        *np.logical_not(flags[out_counter])), 
-                               aspect='auto',vmin=-4,vmax=0.)
-                    plt.colorbar()
-                    out_counter += 1
-        else:
-            for i in range(len(flags)):
-                data = wfs[i, :, :, :]
-                plt.subplot(len(wfs), 1, i+1)
-                plt.imshow(np.log10(np.abs(data[0, :,:]) *np.logical_not(flags[i])), aspect='auto',vmin=-4,vmax=0.)
-                plt.colorbar()
+        # update the flags of the PyUVData object input
+        for n in range(4):
+            if n == 0:
+                for j in range(1024):
+                    self.uvd.flag_array[:, 0, j, n] = prev_pred0[:, j]
+                    
+            elif n == 1:
+                for j in range(1024):
+                    self.uvd.flag_array[:, 0, j, n] = prev_pred1[:, j]
+                    
+            elif n == 2:
+                for j in range(1024):
+                    self.uvd.flag_array[:, 0, j, n] = prev_pred2[:, j]
+                    
+            elif n == 3:
+                for j in range(1024):
+                    self.uvd.flag_array[:, 0, j, n] = prev_pred3[:, j]
+        
+        print("Complete")
