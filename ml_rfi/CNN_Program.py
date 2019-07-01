@@ -113,7 +113,7 @@ class Predictor:
         Method for loading the data in a PyUVData object
         """
         self.uvd.read_uvh5(self.filename, read_data = False)
-        self.uvd.read_uvh5(self.filename, antenna_nums = [1, 50, 120])
+        self.uvd.read_uvh5(self.filename, np.unique(self.uvd.ant_1_array))
         iterator = self.uvd.antpairpol_iter()
         wfs = []
         counter = 0
