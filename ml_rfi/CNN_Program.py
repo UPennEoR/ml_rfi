@@ -3,84 +3,92 @@ import sys
 import numpy as np
 import tensorflow as tf
 from pyuvdata import UVData
+from pyuvdata import UVFlag
 from ml_rfi import helper_functions as hf
 from ml_rfi.amp_model import AmpFCN
 from ml_rfi.amp_phs_model import AmpPhsFCN
-from time import time
+import time
+import operator as op
+from functools import reduce
 
-
-def visualize_output(uvd, in_data = False):
+def visualize_output(uvd, num_vis, in_data = False, font_size = 10, fig_length = 12, fig_height = 360):
         """
         Method for visualizing the output data (with or without the input 
                                                 data)
         Input: The PyUVData object with the data and the corresponding flags
+               The number of waterfalls to show
+               (Optional: whether to show the output data next to the input)
+               (Optional: the font and figure dimensions)
                
         """
         
-        iterator = uvd.antpairpol_iter()
-        wfs = []
-        for x in iterator:
-            wfs.append(x)
+        keys = uvd.get_antpairpols()
+        plt.rcParams.update({'font.size': font_size})
+        plt.figure(figsize=(fig_length, fig_height))
         
-        wfs = np.asarray(wfs)
-        
-        
-        if (in_data):
-            plt.rcParams.update({'font.size': 36})
-            plt.figure(figsize=(6*len(wfs), 19*len(wfs)))
-            in_counter = 0
-            out_counter = 0
+        if in_data:
             
-            for i in range(2*len(wfs)):
-                if (i % 2 == 0):
-                    plt.subplot(len(wfs), 2, i+1)
-                    plt.imshow(np.log10(np.abs(wfs[in_counter, 1])), aspect="auto")
-                    plt.xlabel(wfs[in_counter, 0])
+            counter0 = 0
+            counter1 = 0
+            counter2 = 0
+            
+            for i in range(3*num_vis):
+                if (i % 3 == 0):
+                    plt.subplot(num_vis, 3, i+1)
+                    plt.imshow(np.log10(np.abs(uvd.get_data(keys[counter0], force_copy = True))), aspect="auto")
+                    plt.xlabel(keys[counter0])
                     plt.colorbar()
-                    in_counter += 1
+                    counter0 += 1
+                    
+                elif (i % 3 == 1):
+                    plt.subplot(num_vis, 3, i+1)
+                    plt.imshow(np.angle(uvd.get_data(keys[counter1], force_copy = True)), aspect="auto")
+                    plt.xlabel(keys[counter1])
+                    plt.colorbar()
+                    counter1 += 1
                     
                 else:
-                    plt.subplot(len(wfs), 2, i+1)
-                    plt.imshow(np.log10(np.abs(wfs[out_counter, 1]) *np.logical_not(uvd.get_flags(wfs[out_counter, 0], force_copy = True))), aspect='auto',vmin=-4,vmax=0.)
-                    plt.xlabel(wfs[out_counter, 0])
+                    plt.subplot(num_vis, 3, i+1)
+                    plt.imshow(np.log10(np.abs(uvd.get_data(keys[counter2], force_copy = True))*np.logical_not(uvd.get_flags(keys[counter2], force_copy = True))), aspect='auto',vmin=-4,vmax=0.)
+                    plt.xlabel(keys[counter2])
                     plt.colorbar()
-                    out_counter += 1
+                    counter2 += 1
                 
             
         else:
-            plt.rcParams.update({'font.size': 32})
-            plt.figure(figsize=(3*len(wfs), 6*len(wfs)))
-            iterator = uvd.antpairpol_iter()
-            counter = 0
-            for key, data in iterator:
-                plt.subplot(len(wfs)/2, 2, counter+1)
-                plt.imshow(np.log10(np.abs(data) *np.logical_not(uvd.get_flags(key, force_copy = True))), aspect='auto',vmin=-4,vmax=0.)
-                plt.xlabel(key)
+            for j in range(num_vis):
+                plt.subplot(int(num_vis/2), 2, j+1)
+                plt.imshow(np.log10(np.abs(uvd.get_data(keys[j], force_copy = True)) *np.logical_not(uvd.get_flags(keys[j], force_copy = True))), aspect='auto',vmin=-4,vmax=0.)
+                plt.xlabel(keys[j])
                 plt.colorbar()
-                counter += 1
                 
                 
-                
-def visualize_input(uvd):
+def visualize_input(uvd, num_vis, font_size = 10, fig_length = 12, fig_height = 360):
     """
     Method for making a graph for the input data
-    Input: The PyUVData object with the input data
+    Input: The PyUVData object with the data and the corresponding data
+               The number of waterfalls to show
+               (Optional: the font and figure dimensions)
     """
-    num_of_ants = 0
-    iterator = uvd.antpairpol_iter()
-    for x in iterator:
-        num_of_ants += 1
-        
-    plt.rcParams.update({'font.size': 30})
-    counter = 0
-    plt.figure(figsize=(3*num_of_ants, 6*num_of_ants))
-    iterator = uvd.antpairpol_iter()
-    for key, data in iterator:
-        plt.subplot(num_of_ants/2, 2, counter+1)
-        plt.imshow(np.log10(np.abs(data)), aspect="auto")
-        plt.colorbar()
-        plt.xlabel(key)
-        counter += 1
+    keys = uvd.get_antpairpols()
+    plt.rcParams.update({'font.size': font_size})
+    plt.figure(figsize=(fig_length, fig_height))
+    in_counter = 0
+    out_counter = 0
+    for i in range(2*num_vis):
+        if (i % 2 == 0):
+            plt.subplot(num_vis, 2, i+1)
+            plt.imshow(np.log10(np.abs(uvd.get_data(keys[in_counter]))), aspect='auto')
+            plt.xlabel(keys[in_counter])
+            plt.colorbar()
+            in_counter += 1
+
+        else:
+            plt.subplot(num_vis, 2, i+1)
+            plt.imshow(np.angle(uvd.get_data(keys[out_counter])), aspect='auto')
+            plt.xlabel(keys[out_counter])
+            plt.colorbar()
+            out_counter += 1
 
 
 class Predictor:
@@ -88,10 +96,11 @@ class Predictor:
     Class for making a prediction given a data filename and a CNN model
     """
     
-    def __init__(self, uvd, filename, CNN_model, ch_input = 2,
+    def __init__(self, uvd, filename, CNN_model, batch_size = 40, ch_input = 2,
                  pad_size = 16, f_factor = 16,
                  chtypes = 'AmpPhs'):
         self.uvd = uvd
+        self.batch_size = batch_size
         self.filename = filename
         self.ch_input = ch_input
         self.CNN_model = CNN_model
@@ -108,34 +117,48 @@ class Predictor:
         print("Antenna Options: ")
         print(np.unique(self.uvd.ant_1_array))
 
-    def pick_antennas(self):
+    def pick_antennas(self, num_ants = 0):
         """
         Method for loading the data in a PyUVData object
+        
+        Input (Optional): The number of antennas to pick, where 0 corresponds to all
+        Output: The selected visibilities and the corresponding keys
         """
         self.uvd.read_uvh5(self.filename, read_data = False)
-        self.uvd.read_uvh5(self.filename, np.unique(self.uvd.ant_1_array))
-        iterator = self.uvd.antpairpol_iter()
-        wfs = []
-        counter = 0
-        for x in iterator:
-            wfs.append(x)
-            counter += 1
         
-        self.numants = counter
-        return np.asarray(wfs)
+        ants = []
+        
+        if num_ants == 0:
+            ants = np.unique(self.uvd.ant_1_array)
+        else:
+            ants = np.unique(self.uvd.ant_1_array)[:num_ants]
+        
+        self.uvd.read_uvh5(self.filename, antenna_nums = ants)
+        
+        keys = self.uvd.get_antpairpols()
+        temp = np.zeros([self.batch_size, 60, 1024])
+        first = True
+        wfs = []
+        
+        for i in range(len(keys)):
+            if i%self.batch_size == 0 or i == len(keys)-1:
+                if first:
+                    first = False
+                else:
+                    wfs.append(temp)
+                    temp = np.zeros([self.batch_size, 60, 1024]) 
+            
+            temp[i%self.batch_size] = self.uvd.get_data(keys[i])
+            
+        return np.array(wfs), keys
 
-    def make_prediction(self):
+    def make_prediction(self, num_ants = 0, save_flags = False):
         """
         Main method for performing the CNN prediction
+        Input (Optional): The number of antennas to pick, where 0 corresponds to all
+        Output (optional): A UVFlag object 
         """
-        wfs = self.pick_antennas()
-        
-        # make a list to contain the visibilities for each of the 4 
-        # polarizations
-        prev_pred0 = []
-        prev_pred1 = []
-        prev_pred2 = []
-        prev_pred3 = []
+        wfs, _ = self.pick_antennas(num_ants)
         
         # create variables for the input, output, and kernel
         vis_input = tf.placeholder(tf.float32, shape=[None, None, None, self.ch_input])
@@ -150,75 +173,26 @@ class Predictor:
         with tf.Session() as sess:
             sess.run(init)
             savr.restore(sess, self.CNN_model)
-            for i in range(len(wfs)):
-                sh = wfs[i][1].shape
-                temp = wfs[i][1].reshape(1,sh[0],sh[1])
-                
-                #fold the input data
-                batch_x = (np.array(hf.fold(temp,self.f_factor, self.pad_size))[:,:,:,:2]).reshape(-1,2*(self.pad_size+2)+60,int(2*self.pad_size+1024/self.f_factor),2)
-                time0 = time()
-                ind = 0
-                ct = 0
-                pred_start = time()
-                
-                #perform the actual prediction
-                g = sess.run(RFI_guess, feed_dict={vis_input: batch_x, mode_bn: True})
-                #unfold the prediction data
-                pred_unfold = hf.store_iterator(
-                    map(hf.unfoldl,tf.reshape(tf.argmax(g,axis=-1),
-                    [-1,int(self.f_factor),int(2*(self.pad_size+2)+60),
-                    int(2*self.pad_size+1024/self.f_factor)]).eval(),[self.f_factor],[self.pad_size]))
+            
+            #fold the input data
+            batches = [hf.store_iterator(map(hf.fold, temp, self.batch_size*[self.f_factor],self.batch_size*[self.pad_size]))[:,:,:,:,:2].reshape(-1,2*(self.pad_size+2)+60,int(2*self.pad_size+1024/self.f_factor),2) for temp in wfs]                    
+            #perform the actual prediction
+            g_s = [sess.run(RFI_guess, feed_dict={vis_input: batch_x, mode_bn: True}) for batch_x in batches]
 
-                pred_time = time() - pred_start
-                if self.chtypes == 'AmpPhs':
-                    thresh = 0.62
-                else:
-                    thresh = 0.385
-                
-                #store the prediction data
-                y_pred = np.array(pred_unfold[0]).reshape(-1,1024)
-                
-                # categorize the predictions in each polarization
-                if i%4 == 0:
-                    if len(prev_pred0) == 0:
-                        prev_pred0 = y_pred
-                    else:
-                        prev_pred0 = np.concatenate((prev_pred0, y_pred), axis = 0)
-                
-                elif i%4 == 1:
-                    if len(prev_pred1) == 0:
-                        prev_pred1 = y_pred
-                    else:
-                        prev_pred1 = np.concatenate((prev_pred1, y_pred), axis = 0)
-                        
-                elif i%4 == 2:
-                    if len(prev_pred2) == 0:
-                        prev_pred2 = y_pred
-                    else:
-                        prev_pred2 = np.concatenate((prev_pred2, y_pred), axis = 0)
-                    
-                elif i%4 == 3:
-                    if len(prev_pred3) == 0:
-                        prev_pred3 = y_pred
-                    else:
-                        prev_pred3 = np.concatenate((prev_pred3, y_pred), axis = 0)
+            #unfold the prediction data
+            pred_unfold = [hf.store_iterator(map(hf.unfoldl,tf.reshape(tf.argmax(g,axis=-1),[-1,int(self.f_factor),int(2*(self.pad_size+2)+60),int(2*self.pad_size+1024/self.f_factor)]).eval(),self.batch_size*[self.f_factor],self.batch_size*[self.pad_size])) for g in g_s]
         
-        # update the flags of the PyUVData object input
-        for n in range(4):
-            if n == 0:
-                for j in range(1024):
-                    self.uvd.flag_array[:, 0, j, n] = prev_pred0[:, j]
-                    
-            elif n == 1:
-                for j in range(1024):
-                    self.uvd.flag_array[:, 0, j, n] = prev_pred1[:, j]
-                    
-            elif n == 2:
-                for j in range(1024):
-                    self.uvd.flag_array[:, 0, j, n] = prev_pred2[:, j]
-                    
-            elif n == 3:
-                for j in range(1024):
-                    self.uvd.flag_array[:, 0, j, n] = prev_pred3[:, j]
+        #save the flags into the UVData object
+        self.uvd.flag_array[:, 0, :, 0] = np.concatenate(np.concatenate(pred_unfold)[0::4])
+            
+        self.uvd.flag_array[:, 0, :, 1] = np.concatenate(np.concatenate(pred_unfold)[1::4])
+            
+        self.uvd.flag_array[:, 0, :, 2] = np.concatenate(np.concatenate(pred_unfold)[2::4])
+            
+        self.uvd.flag_array[:, 0, :, 3] = np.concatenate(np.concatenate(pred_unfold)[3::4])
         
-        print("Complete")
+        #Optionally return a UVFlag object
+        if save_flags:
+            return UVFlag(self.uvd)
+        
+        print("Prediction Complete")

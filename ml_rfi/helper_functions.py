@@ -91,22 +91,21 @@ def unpad(data, diff=4, padding=2):
 
 
 def store_iterator(it):
-    a = []
-    for x in it:
-        a.append(x)
+    
+    a = [x for x in it]
     
     return np.array(a)
 
 
 def fold(data, ch_fold=16, padding=2):
-    """
+     """
     Folding function for carving waterfall visibilities with additional normalized log 
     and phase channels.
     Input: (Batch, Time, Frequency)
     Output: (Batch*FoldFactor, Time, Reduced Frequency, Channels) 
     """
     sh = np.shape(data)
-    _data = data.T.reshape(ch_fold, int(sh[2] / ch_fold), -1)
+    _data = data.T.reshape(ch_fold, int(sh[1] / ch_fold), -1)
     _DATA = store_iterator(map(transpose,_data))
     _DATApad = store_iterator(map(pad, _DATA))
         
@@ -129,17 +128,12 @@ def unfoldl(data_fold, ch_fold=16, padding=2):
     Output: (Batch, Time, Frequency)
     """
     
-    data_unpad = store_iterator(map(
-            unpad,
-            data_fold,
-            len(data_fold) * [ch_fold],
-            len(data_fold) * [(padding + 2, padding)],
-        )
-    )
+    data_unpad = [unpad(b, ch_fold, (padding + 2, padding)) for b in data_fold]
     #print("Unpad shape", np.shape(data_unpad))
     ch_fold, ntimes, dfreqs = np.shape(data_unpad)
-    data_ = store_iterator(map(transpose, data_unpad))
+    data_ = np.array([transpose(x) for x in data_unpad])
     _data = data_.reshape(ch_fold * dfreqs, ntimes).T
+    
     return _data
 
 
