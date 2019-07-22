@@ -98,7 +98,7 @@ def store_iterator(it):
 
 
 def fold(data, ch_fold=16, padding=2):
-     """
+    """
     Folding function for carving waterfall visibilities with additional normalized log 
     and phase channels.
     Input: (Batch, Time, Frequency)

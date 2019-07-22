@@ -11,14 +11,16 @@ import time
 import operator as op
 from functools import reduce
 
-def visualize_output(uvd, num_vis, in_data = False, font_size = 10, fig_length = 12, fig_height = 360):
+def visualize_output(uvd, num_vis, show_folds = False, in_data = False, font_size = 10, fig_length = 12, fig_height = 360):
         """
         Method for visualizing the output data (with or without the input 
                                                 data)
         Input: The PyUVData object with the data and the corresponding flags
                The number of waterfalls to show
+               (Optional: whether to show the folds of the data)
                (Optional: whether to show the output data next to the input)
                (Optional: the font and figure dimensions)
+               
                
         """
         
@@ -36,6 +38,8 @@ def visualize_output(uvd, num_vis, in_data = False, font_size = 10, fig_length =
                 if (i % 3 == 0):
                     plt.subplot(num_vis, 3, i+1)
                     plt.imshow(np.log10(np.abs(uvd.get_data(keys[counter0], force_copy = True))), aspect="auto")
+                    if show_folds:
+                        a = [plt.plot([(i+1)*64, (i+1)*64], [0, 60], 'k-', lw=0.7, linestyle = '--') for i in range(16)]
                     plt.xlabel(keys[counter0])
                     plt.colorbar()
                     counter0 += 1
@@ -43,6 +47,8 @@ def visualize_output(uvd, num_vis, in_data = False, font_size = 10, fig_length =
                 elif (i % 3 == 1):
                     plt.subplot(num_vis, 3, i+1)
                     plt.imshow(np.angle(uvd.get_data(keys[counter1], force_copy = True)), aspect="auto")
+                    if show_folds:
+                        a = [plt.plot([(i+1)*64, (i+1)*64], [0, 60], 'k-', lw=0.7, linestyle = '--') for i in range(16)]
                     plt.xlabel(keys[counter1])
                     plt.colorbar()
                     counter1 += 1
@@ -50,6 +56,8 @@ def visualize_output(uvd, num_vis, in_data = False, font_size = 10, fig_length =
                 else:
                     plt.subplot(num_vis, 3, i+1)
                     plt.imshow(np.log10(np.abs(uvd.get_data(keys[counter2], force_copy = True))*np.logical_not(uvd.get_flags(keys[counter2], force_copy = True))), aspect='auto',vmin=-4,vmax=0.)
+                    if show_folds:
+                        a = [plt.plot([(i+1)*64, (i+1)*64], [0, 60], 'k-', lw=0.7, linestyle = '--') for i in range(16)]
                     plt.xlabel(keys[counter2])
                     plt.colorbar()
                     counter2 += 1
@@ -63,11 +71,12 @@ def visualize_output(uvd, num_vis, in_data = False, font_size = 10, fig_length =
                 plt.colorbar()
                 
                 
-def visualize_input(uvd, num_vis, font_size = 10, fig_length = 12, fig_height = 360):
+def visualize_input(uvd, num_vis, show_folds = False, font_size = 10, fig_length = 12, fig_height = 360):
     """
     Method for making a graph for the input data
     Input: The PyUVData object with the data and the corresponding data
                The number of waterfalls to show
+               (Optional: whether to show the folds of the data)
                (Optional: the font and figure dimensions)
     """
     keys = uvd.get_antpairpols()
@@ -79,6 +88,8 @@ def visualize_input(uvd, num_vis, font_size = 10, fig_length = 12, fig_height = 
         if (i % 2 == 0):
             plt.subplot(num_vis, 2, i+1)
             plt.imshow(np.log10(np.abs(uvd.get_data(keys[in_counter]))), aspect='auto')
+            if show_folds:
+                a = [plt.plot([(i+1)*64, (i+1)*64], [0, 60], 'k-', lw=0.7, linestyle = '--') for i in range(16)]
             plt.xlabel(keys[in_counter])
             plt.colorbar()
             in_counter += 1
@@ -86,6 +97,8 @@ def visualize_input(uvd, num_vis, font_size = 10, fig_length = 12, fig_height = 
         else:
             plt.subplot(num_vis, 2, i+1)
             plt.imshow(np.angle(uvd.get_data(keys[out_counter])), aspect='auto')
+            if show_folds:
+                a = [plt.plot([(i+1)*64, (i+1)*64], [0, 60], 'k-', lw=0.7, linestyle = '--') for i in range(16)]
             plt.xlabel(keys[out_counter])
             plt.colorbar()
             out_counter += 1
@@ -135,10 +148,13 @@ class Predictor:
         
         self.uvd.read_uvh5(self.filename, antenna_nums = ants)
         
+        total_num_data = len(self.uvd.data_array)/15
+        num_batches = int(total_num_data/self.batch_size)
         keys = self.uvd.get_antpairpols()
         temp = np.zeros([self.batch_size, 60, 1024])
         first = True
         wfs = []
+        batch_c = 0
         
         for i in range(len(keys)):
             if i%self.batch_size == 0 or i == len(keys)-1:
@@ -146,7 +162,13 @@ class Predictor:
                     first = False
                 else:
                     wfs.append(temp)
-                    temp = np.zeros([self.batch_size, 60, 1024]) 
+                    #Check if this is the second-to-last batch and if the 
+                    #final batch will be a complete one
+                    if batch_c == num_batches - 1 and total_num_data % self.batch_size != 0:
+                        temp = np.zeros([int(total_num_data % self.batch_size), 60, 1024])
+                    else:
+                        temp = np.zeros([self.batch_size, 60, 1024])
+                        batch_c += 1
             
             temp[i%self.batch_size] = self.uvd.get_data(keys[i])
             
