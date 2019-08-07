@@ -1,5 +1,5 @@
-import matplotlib.pyplot as plt
 import sys
+import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from pyuvdata import UVData
@@ -8,8 +8,6 @@ from ml_rfi import helper_functions as hf
 from ml_rfi.amp_model import AmpFCN
 from ml_rfi.amp_phs_model import AmpPhsFCN
 import time
-import operator as op
-from functools import reduce
 
 def visualize_output(uvd, num_vis, show_folds = False, in_data = False, font_size = 10, fig_length = 12, fig_height = 360):
         """
@@ -180,7 +178,10 @@ class Predictor:
         Input (Optional): The number of antennas to pick, where 0 corresponds to all
         Output (optional): A UVFlag object 
         """
-        wfs, _ = self.pick_antennas(num_ants)
+        # wfs, _ = self.pick_antennas(num_ants)
+        # read in the data
+        print("reading {}".format(self.filename))
+        self.uvd.read_uvh5(self.filename)
         
         # create variables for the input, output, and kernel
         vis_input = tf.placeholder(tf.float32, shape=[None, None, None, self.ch_input])
@@ -192,29 +193,100 @@ class Predictor:
         init = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
         savr = tf.train.Saver()
 
+        if save_flags:
+            # make UVFlag object
+            self.uvf = UVFlag(self.uvd, mode='flag', copy_flags=True)
+
         with tf.Session() as sess:
             sess.run(init)
             savr.restore(sess, self.CNN_model)
-            
-            #fold the input data
-            batches = [hf.store_iterator(map(hf.fold, temp, self.batch_size*[self.f_factor],self.batch_size*[self.pad_size]))[:,:,:,:,:2].reshape(-1,2*(self.pad_size+2)+60,int(2*self.pad_size+1024/self.f_factor),2) for temp in wfs]                    
-            #perform the actual prediction
-            g_s = [sess.run(RFI_guess, feed_dict={vis_input: batch_x, mode_bn: True}) for batch_x in batches]
 
-            #unfold the prediction data
-            pred_unfold = [hf.store_iterator(map(hf.unfoldl,tf.reshape(tf.argmax(g,axis=-1),[-1,int(self.f_factor),int(2*(self.pad_size+2)+60),int(2*self.pad_size+1024/self.f_factor)]).eval(),self.batch_size*[self.f_factor],self.batch_size*[self.pad_size])) for g in g_s]
+            # iterate over waterfalls in UVData object
+            idx = 0
+            batch = np.zeros((self.batch_size, self.uvd.Ntimes, self.uvd.Nfreqs),
+                             dtype=self.uvd.data_array.dtype)
+            keys = []
+            batch_id = 0
+            print("starting prediction...")
+            t0 = time.time()
+            for key, data in self.uvd.antpairpol_iter():
+                #if batch_id < num_batches:
+                    if idx < self.batch_size:
+                            # add another waterfall to the batch
+                            batch[idx, :, :] = data
+                            keys.append(key)
+                            idx += 1
+                    else:
+                            print("batch {:d}".format(batch_id))
+                            batch_id += 1
+                            # actually make prediction
+                            batches = np.array(list(map(hf.fold,
+                                                        batch,
+                                                        self.batch_size * [self.f_factor],
+                                                        self.batch_size * [self.pad_size])))[:, :, :, :, :2].reshape(
+                                                                -1,
+                                                                2 * (self.pad_size + 2) + 60,
+                                                                int(2 * self.pad_size + 1024 / self.f_factor),
+                                                                2)
+                            g_s = sess.run(RFI_guess, feed_dict={vis_input: batches, mode_bn: True})
+
+                            # unfold data
+                            pred_unfold = np.array(list(map(hf.unfoldl,
+                                                            tf.reshape(tf.argmax(g_s, axis=-1),
+                                                                       [-1, int(self.f_factor),
+                                                                        int(2 * (self.pad_size + 2) + 60),
+                                                                        int(2 * self.pad_size + 1024 / self.f_factor)]).eval(),
+                                                            self.batch_size*[self.f_factor],self.batch_size*[self.pad_size])))
+                            # store flags back in flag_array
+                            for j, key in enumerate(keys):
+                                    blt1, blt2, pol = self.uvd._key2inds(key)
+                                    assert len(blt2) == 0
+                                    assert len(blt1) == pred_unfold.shape[1]
+                                    assert pred_unfold.shape[2] == self.uvd.Nfreqs
+                                    if save_flags:
+                                            self.uvf.flag_array[blt1, 0, :, pol[0]] = pred_unfold[j, :, :]
+                                    else:
+                                            self.uvd.flag_array[blt1, 0, :, pol[0]] = pred_unfold[j, :, :]
+
+                            # reinitialize
+                            idx = 0
+                            batch = np.zeros((self.batch_size, self.uvd.Ntimes, self.uvd.Nfreqs),
+                                             dtype=self.uvd.data_array.dtype)
+                            keys = []
+            if idx > 0:
+                    print(idx)
+                    # make one final prediction
+                    batch = batch[:idx, :, :]
+                    batches = np.array(list(map(hf.fold,
+                                       batch,
+                                       self.batch_size * [self.f_factor],
+                                       self.batch_size * [self.pad_size])))[:, :, :, :, :2].reshape(
+                                               -1, 2 * (self.pad_size + 2) + 60,
+                                               int(2 * self.pad_size + 1024 / self.f_factor), 2)
+                    g_s = sess.run(RFI_guess, feed_dict={vis_input: batches, mode_bn: True})
+
+                    # unfold data
+                    pred_unfold = np.array(list(map(hf.unfoldl,
+                                           tf.reshape(tf.argmax(g_s, axis=-1),
+                                                      [-1, int(self.f_factor),
+                                                       int(2 * (self.pad_size + 2) + 60),
+                                                       int(2 * self.pad_size + 1024 / self.f_factor)]).eval(),
+                                           self.batch_size*[self.f_factor],self.batch_size*[self.pad_size])))
+                    # store flags back in flag_array
+                    for j, key in enumerate(keys):
+                            blt1, blt2, pol = self.uvd._key2inds(key)
+                            assert len(blt2) == 0
+                            assert len(blt1) == pred_unfold.shape[1]
+                            assert pred_unfold.shape[2] == self.uvd.Nfreqs
+                            if save_flags:
+                                    self.uvf.flag_array[blt1, 0, :, pol[0]] = pred_unfold[j, :, :]
+                            else:
+                                    self.uvd.flag_array[blt1, 0, :, pol[0]] = pred_unfold[j, :, :]
         
-        #save the flags into the UVData object
-        self.uvd.flag_array[:, 0, :, 0] = np.concatenate(np.concatenate(pred_unfold)[0::4])
-            
-        self.uvd.flag_array[:, 0, :, 1] = np.concatenate(np.concatenate(pred_unfold)[1::4])
-            
-        self.uvd.flag_array[:, 0, :, 2] = np.concatenate(np.concatenate(pred_unfold)[2::4])
-            
-        self.uvd.flag_array[:, 0, :, 3] = np.concatenate(np.concatenate(pred_unfold)[3::4])
-        
+        t1 = time.time()
+        print("Prediction Complete")
+        print("elapsed time: ", t1 - t0)
+
         #Optionally return a UVFlag object
         if save_flags:
-            return UVFlag(self.uvd)
-        
-        print("Prediction Complete")
+            return self.uvf
