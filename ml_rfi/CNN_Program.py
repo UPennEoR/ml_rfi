@@ -210,7 +210,6 @@ class Predictor:
             print("starting prediction...")
             t0 = time.time()
             for key, data in self.uvd.antpairpol_iter():
-                #if batch_id < num_batches:
                     if idx < self.batch_size:
                             # add another waterfall to the batch
                             batch[idx, :, :] = data
