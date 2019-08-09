@@ -172,7 +172,7 @@ class Predictor:
             
         return np.array(wfs), keys
 
-    def make_prediction(self, num_ants = 0, save_flags = False):
+    def make_prediction(self, save_flags = False):
         """
         Main method for performing the CNN prediction
         Input (Optional): The number of antennas to pick, where 0 corresponds to all
