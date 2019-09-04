@@ -75,7 +75,9 @@ def pad(data, padding=2):
 
     sh = np.shape(data)
     t_pad = 16
-    data_pad = np.pad(data, pad_width=((t_pad + 2, t_pad + 2), (t_pad, t_pad)), mode='reflect')
+    data_pad = np.pad(
+        data, pad_width=((t_pad + 2, t_pad + 2), (t_pad, t_pad)), mode="reflect"
+    )
 
     return data_pad
 
@@ -86,7 +88,7 @@ def unpad(data, diff=4, padding=2):
     """
     sh = np.shape(data)
     t_unpad = sh[0]
-    return data[padding[0]:sh[0] - padding[0], padding[1]:sh[1] - padding[1]]
+    return data[padding[0] : sh[0] - padding[0], padding[1] : sh[1] - padding[1]]
 
 
 def store_iterator(it):
@@ -111,9 +113,9 @@ def fold(data, ch_fold=16, padding=2):
         (
             store_iterator(map(normalize, _DATApad)),
             store_iterator(map(normphs, _DATApad)),
-            np.mod(store_iterator(map(normphs, _DATApad)), np.pi)
+            np.mod(store_iterator(map(normphs, _DATApad)), np.pi),
         ),
-        axis=-1
+        axis=-1,
     )
 
     return DATA
@@ -127,7 +129,9 @@ def unfoldl(data_fold, ch_fold=16, padding=2):
     Output: (Batch, Time, Frequency)
     """
     sh = np.shape(data_fold)
-    data_unpad = data_fold[:, (padding + 2):(sh[1] - (padding + 2)), padding:sh[2] - padding]
+    data_unpad = data_fold[
+        :, (padding + 2) : (sh[1] - (padding + 2)), padding : sh[2] - padding
+    ]
     ch_fold, ntimes, dfreqs = np.shape(data_unpad)
     data_ = np.transpose(data_unpad, (0, 2, 1))
     _data = data_.reshape(ch_fold * dfreqs, ntimes).T
@@ -368,13 +372,13 @@ def stride(input_data, input_labels):
 
     x = np.array(
         [
-            input_data[:, i - spw_hw:i + spw_hw]
+            input_data[:, i - spw_hw : i + spw_hw]
             for i in range(spw_hw, 1024 - spw_hw, (nchans - 2 * spw_hw) / 60)
         ]
     )
     x_labels = np.array(
         [
-            input_labels[:, i - spw_hw:i + spw_hw]
+            input_labels[:, i - spw_hw : i + spw_hw]
             for i in range(spw_hw, 1024 - spw_hw, (nchans - 2 * spw_hw) / 60)
         ]
     )
@@ -692,9 +696,9 @@ class RFIDataset:
                 f_real_labels[: int(real_len / 2), :, :], dtype=np.int32
             ).reshape(-1, real_sh[1] * real_sh[2])
 
-            train_data = np.vstack((f_real[int(real_len / 2):, :, :, :], f_sim))
+            train_data = np.vstack((f_real[int(real_len / 2) :, :, :, :], f_sim))
             train_labels = np.vstack(
-                (f_real_labels[int(real_len / 2):, :, :], f_sim_labels)
+                (f_real_labels[int(real_len / 2) :, :, :], f_sim_labels)
             )
             hybrid_len = np.shape(train_data)[0]
             mix_ind = np.random.permutation(hybrid_len)
@@ -709,10 +713,10 @@ class RFIDataset:
             # Format evaluation dataset
             sim_len = np.shape(f_sim)[0]
             self.eval_data = np.asarray(
-                f_sim[int(sim_len * 0.8):, :, :, :], dtype=d_type
+                f_sim[int(sim_len * 0.8) :, :, :, :], dtype=d_type
             )
             self.eval_labels = np.asarray(
-                f_sim_labels[int(sim_len * 0.8):, :, :], dtype=np.int32
+                f_sim_labels[int(sim_len * 0.8) :, :, :], dtype=np.int32
             ).reshape(-1, real_sh[1] * real_sh[2])
             eval1 = np.shape(self.eval_data)[0]
 
@@ -785,10 +789,10 @@ class RFIDataset:
         sim_sh = np.shape(f_sim)
         print("Sim Shape", sim_sh)
         self.eval_data = np.asarray(
-            f_sim[int(sim_len * 0.8):, :, :, :], dtype=d_type
+            f_sim[int(sim_len * 0.8) :, :, :, :], dtype=d_type
         ).reshape(-1, sim_sh[1], sim_sh[2], 2)
         self.eval_labels = np.asarray(
-            f_sim_labels[int(sim_len * 0.8):, :, :], dtype=np.int32
+            f_sim_labels[int(sim_len * 0.8) :, :, :], dtype=np.int32
         ).reshape(-1, sim_sh[1] * sim_sh[2])
         eval1 = np.shape(self.eval_data)[0]
         # Format training dataset

@@ -13,8 +13,15 @@ from .amp_model import AmpFCN
 from .amp_phs_model import AmpPhsFCN
 
 
-def visualize_output(uvd, num_vis, show_folds=False, in_data=False, font_size=10,
-                     fig_length=12, fig_height=360):
+def visualize_output(
+    uvd,
+    num_vis,
+    show_folds=False,
+    in_data=False,
+    font_size=10,
+    fig_length=12,
+    fig_height=360,
+):
     """
     Visualize the output data (with or without the input data)
 
@@ -37,7 +44,7 @@ def visualize_output(uvd, num_vis, show_folds=False, in_data=False, font_size=10
 
     """
     keys = uvd.get_antpairpols()
-    plt.rcParams.update({'font.size': font_size})
+    plt.rcParams.update({"font.size": font_size})
     plt.figure(figsize=(fig_length, fig_height))
 
     if in_data:
@@ -45,46 +52,92 @@ def visualize_output(uvd, num_vis, show_folds=False, in_data=False, font_size=10
         counter1 = 0
         counter2 = 0
         for i in range(3 * num_vis):
-            if (i % 3 == 0):
+            if i % 3 == 0:
                 plt.subplot(num_vis, 3, i + 1)
-                plt.imshow(np.log10(np.abs(uvd.get_data(keys[counter0], force_copy=True))), aspect="auto")
+                plt.imshow(
+                    np.log10(np.abs(uvd.get_data(keys[counter0], force_copy=True))),
+                    aspect="auto",
+                )
                 if show_folds:
-                    a = [plt.plot([(i + 1) * 64, (i + 1) * 64], [0, 60], 'k-', lw=0.7, linestyle='--') for i in range(16)]
+                    a = [
+                        plt.plot(
+                            [(i + 1) * 64, (i + 1) * 64],
+                            [0, 60],
+                            "k-",
+                            lw=0.7,
+                            linestyle="--",
+                        )
+                        for i in range(16)
+                    ]
                 plt.xlabel(keys[counter0])
                 plt.colorbar()
                 counter0 += 1
-            elif (i % 3 == 1):
+            elif i % 3 == 1:
                 plt.subplot(num_vis, 3, i + 1)
-                plt.imshow(np.angle(uvd.get_data(keys[counter1], force_copy=True)), aspect="auto")
+                plt.imshow(
+                    np.angle(uvd.get_data(keys[counter1], force_copy=True)),
+                    aspect="auto",
+                )
                 if show_folds:
-                    a = [plt.plot([(i + 1) * 64, (i + 1) * 64], [0, 60], 'k-', lw=0.7, linestyle='--') for i in range(16)]
+                    a = [
+                        plt.plot(
+                            [(i + 1) * 64, (i + 1) * 64],
+                            [0, 60],
+                            "k-",
+                            lw=0.7,
+                            linestyle="--",
+                        )
+                        for i in range(16)
+                    ]
                 plt.xlabel(keys[counter1])
                 plt.colorbar()
                 counter1 += 1
             else:
                 plt.subplot(num_vis, 3, i + 1)
-                plt.imshow(np.log10(np.abs(uvd.get_data(keys[counter2], force_copy=True))
-                                    * np.logical_not(uvd.get_flags(keys[counter2], force_copy=True))),
-                           aspect='auto', vmin=-4, vmax=0.)
+                plt.imshow(
+                    np.log10(
+                        np.abs(uvd.get_data(keys[counter2], force_copy=True))
+                        * np.logical_not(uvd.get_flags(keys[counter2], force_copy=True))
+                    ),
+                    aspect="auto",
+                    vmin=-4,
+                    vmax=0.0,
+                )
                 if show_folds:
-                    a = [plt.plot([(i + 1) * 64, (i + 1) * 64], [0, 60], 'k-', lw=0.7, linestyle='--') for i in range(16)]
+                    a = [
+                        plt.plot(
+                            [(i + 1) * 64, (i + 1) * 64],
+                            [0, 60],
+                            "k-",
+                            lw=0.7,
+                            linestyle="--",
+                        )
+                        for i in range(16)
+                    ]
                 plt.xlabel(keys[counter2])
                 plt.colorbar()
                 counter2 += 1
     else:
         for j in range(num_vis):
             plt.subplot(int(num_vis / 2), 2, j + 1)
-            plt.imshow(np.log10(np.abs(uvd.get_data(keys[j], force_copy=True))
-                                * np.logical_not(uvd.get_flags(keys[j], force_copy=True))),
-                       aspect='auto', vmin=-4, vmax=0.)
+            plt.imshow(
+                np.log10(
+                    np.abs(uvd.get_data(keys[j], force_copy=True))
+                    * np.logical_not(uvd.get_flags(keys[j], force_copy=True))
+                ),
+                aspect="auto",
+                vmin=-4,
+                vmax=0.0,
+            )
             plt.xlabel(keys[j])
             plt.colorbar()
 
     return
 
 
-def visualize_input(uvd, num_vis, show_folds=False, font_size=10, fig_length=12,
-                    fig_height=360):
+def visualize_input(
+    uvd, num_vis, show_folds=False, font_size=10, fig_length=12, fig_height=360
+):
     """
     Method for making a graph for the input data
     Input: The PyUVData object with the data and the corresponding data
@@ -93,25 +146,43 @@ def visualize_input(uvd, num_vis, show_folds=False, font_size=10, fig_length=12,
                (Optional: the font and figure dimensions)
     """
     keys = uvd.get_antpairpols()
-    plt.rcParams.update({'font.size': font_size})
+    plt.rcParams.update({"font.size": font_size})
     plt.figure(figsize=(fig_length, fig_height))
     in_counter = 0
     out_counter = 0
     for i in range(2 * num_vis):
-        if (i % 2 == 0):
+        if i % 2 == 0:
             plt.subplot(num_vis, 2, i + 1)
-            plt.imshow(np.log10(np.abs(uvd.get_data(keys[in_counter]))), aspect='auto')
+            plt.imshow(np.log10(np.abs(uvd.get_data(keys[in_counter]))), aspect="auto")
             if show_folds:
-                a = [plt.plot([(i + 1) * 64, (i + 1) * 64], [0, 60], 'k-', lw=0.7, linestyle='--') for i in range(16)]
+                a = [
+                    plt.plot(
+                        [(i + 1) * 64, (i + 1) * 64],
+                        [0, 60],
+                        "k-",
+                        lw=0.7,
+                        linestyle="--",
+                    )
+                    for i in range(16)
+                ]
             plt.xlabel(keys[in_counter])
             plt.colorbar()
             in_counter += 1
 
         else:
             plt.subplot(num_vis, 2, i + 1)
-            plt.imshow(np.angle(uvd.get_data(keys[out_counter])), aspect='auto')
+            plt.imshow(np.angle(uvd.get_data(keys[out_counter])), aspect="auto")
             if show_folds:
-                a = [plt.plot([(i + 1) * 64, (i + 1) * 64], [0, 60], 'k-', lw=0.7, linestyle='--') for i in range(16)]
+                a = [
+                    plt.plot(
+                        [(i + 1) * 64, (i + 1) * 64],
+                        [0, 60],
+                        "k-",
+                        lw=0.7,
+                        linestyle="--",
+                    )
+                    for i in range(16)
+                ]
             plt.xlabel(keys[out_counter])
             plt.colorbar()
             out_counter += 1
@@ -121,9 +192,18 @@ class Predictor:
     """
     Class for making a prediction given a data filename and a CNN model
     """
-    def __init__(self, uvd, filename, CNN_model, batch_size=40, ch_input=2,
-                 pad_size=16, f_factor=16,
-                 chtypes='AmpPhs'):
+
+    def __init__(
+        self,
+        uvd,
+        filename,
+        CNN_model,
+        batch_size=40,
+        ch_input=2,
+        pad_size=16,
+        f_factor=16,
+        chtypes="AmpPhs",
+    ):
         self.uvd = uvd
         self.batch_size = batch_size
         self.filename = filename
@@ -159,8 +239,12 @@ class Predictor:
         d_out = tf.placeholder(tf.float32)
         kernel_size = tf.placeholder(tf.int32)
 
-        RFI_guess = AmpPhsFCN(vis_input, mode_bn=mode_bn, d_out=d_out, reuse=tf.AUTO_REUSE)
-        init = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
+        RFI_guess = AmpPhsFCN(
+            vis_input, mode_bn=mode_bn, d_out=d_out, reuse=tf.AUTO_REUSE
+        )
+        init = tf.group(
+            tf.global_variables_initializer(), tf.local_variables_initializer()
+        )
         savr = tf.train.Saver()
 
         if save_flags:
@@ -173,8 +257,10 @@ class Predictor:
 
             # iterate over waterfalls in UVData object
             idx = 0
-            batch = np.zeros((self.batch_size, self.uvd.Ntimes, self.uvd.Nfreqs),
-                             dtype=self.uvd.data_array.dtype)
+            batch = np.zeros(
+                (self.batch_size, self.uvd.Ntimes, self.uvd.Nfreqs),
+                dtype=self.uvd.data_array.dtype,
+            )
             keys = []
             batch_id = 0
             print("starting prediction...")
@@ -190,20 +276,46 @@ class Predictor:
                         print("batch {:d}".format(batch_id))
                         batch_id += 1
                         # actually make prediction
-                        batches = np.array(list(map(hf.fold, batch, self.batch_size * [self.f_factor],
-                                                    self.batch_size * [self.pad_size])))[:, :, :, :, :2].reshape(
-                                                        -1, 2 * (self.pad_size + 2) + 60,
-                                                        int(2 * self.pad_size + 1024 / self.f_factor),
-                                                        2)
-                        g_s = sess.run(RFI_guess, feed_dict={vis_input: batches, mode_bn: True})
+                        batches = np.array(
+                            list(
+                                map(
+                                    hf.fold,
+                                    batch,
+                                    self.batch_size * [self.f_factor],
+                                    self.batch_size * [self.pad_size],
+                                )
+                            )
+                        )[:, :, :, :, :2].reshape(
+                            -1,
+                            2 * (self.pad_size + 2) + 60,
+                            int(2 * self.pad_size + 1024 / self.f_factor),
+                            2,
+                        )
+                        g_s = sess.run(
+                            RFI_guess, feed_dict={vis_input: batches, mode_bn: True}
+                        )
 
                         # unfold data
-                        pred_unfold = np.array(list(map(hf.unfoldl,
-                                                        np.reshape(tf.argmax(g_s, axis=-1).eval(),
-                                                                   (-1, int(self.f_factor),
-                                                                    int(2 * (self.pad_size + 2) + 60),
-                                                                    int(2 * self.pad_size + 1024 / self.f_factor))),
-                                                        self.batch_size * [self.f_factor], self.batch_size * [self.pad_size])))
+                        pred_unfold = np.array(
+                            list(
+                                map(
+                                    hf.unfoldl,
+                                    np.reshape(
+                                        tf.argmax(g_s, axis=-1).eval(),
+                                        (
+                                            -1,
+                                            int(self.f_factor),
+                                            int(2 * (self.pad_size + 2) + 60),
+                                            int(
+                                                2 * self.pad_size + 1024 / self.f_factor
+                                            ),
+                                        ),
+                                    ),
+                                    self.batch_size * [self.f_factor],
+                                    self.batch_size * [self.pad_size],
+                                )
+                            )
+                        )
                         # store flags back in flag_array
                         for j, key in enumerate(keys):
                             blt1, blt2, pol = self.uvd._key2inds(key)
@@ -211,35 +323,62 @@ class Predictor:
                             assert len(blt1) == pred_unfold.shape[1]
                             assert pred_unfold.shape[2] == self.uvd.Nfreqs
                             if save_flags:
-                                uvf.flag_array[blt1, 0, :, pol[0]] = pred_unfold[j, :, :]
+                                uvf.flag_array[blt1, 0, :, pol[0]] = pred_unfold[
+                                    j, :, :
+                                ]
                             else:
-                                self.uvd.flag_array[blt1, 0, :, pol[0]] = pred_unfold[j, :, :]
+                                self.uvd.flag_array[blt1, 0, :, pol[0]] = pred_unfold[
+                                    j, :, :
+                                ]
 
                             # reinitialize
                             idx = 0
-                            batch = np.zeros((self.batch_size, self.uvd.Ntimes, self.uvd.Nfreqs),
-                                             dtype=self.uvd.data_array.dtype)
+                            batch = np.zeros(
+                                (self.batch_size, self.uvd.Ntimes, self.uvd.Nfreqs),
+                                dtype=self.uvd.data_array.dtype,
+                            )
                             keys = []
                 else:
                     break
             if idx > 0:
                 # make one final prediction
                 batch = batch[:idx, :, :]
-                batches = np.array(list(map(hf.fold,
-                                            batch,
-                                            self.batch_size * [self.f_factor],
-                                            self.batch_size * [self.pad_size])))[:, :, :, :, :2].reshape(
-                                                -1, 2 * (self.pad_size + 2) + 60,
-                                                int(2 * self.pad_size + 1024 / self.f_factor), 2)
+                batches = np.array(
+                    list(
+                        map(
+                            hf.fold,
+                            batch,
+                            self.batch_size * [self.f_factor],
+                            self.batch_size * [self.pad_size],
+                        )
+                    )
+                )[:, :, :, :, :2].reshape(
+                    -1,
+                    2 * (self.pad_size + 2) + 60,
+                    int(2 * self.pad_size + 1024 / self.f_factor),
+                    2,
+                )
                 g_s = sess.run(RFI_guess, feed_dict={vis_input: batches, mode_bn: True})
 
                 # unfold data
-                pred_unfold = np.array(list(map(hf.unfoldl,
-                                                tf.reshape(tf.argmax(g_s, axis=-1),
-                                                           [-1, int(self.f_factor),
-                                                            int(2 * (self.pad_size + 2) + 60),
-                                                            int(2 * self.pad_size + 1024 / self.f_factor)]).eval(),
-                                                self.batch_size * [self.f_factor], self.batch_size * [self.pad_size])))
+                pred_unfold = np.array(
+                    list(
+                        map(
+                            hf.unfoldl,
+                            tf.reshape(
+                                tf.argmax(g_s, axis=-1),
+                                [
+                                    -1,
+                                    int(self.f_factor),
+                                    int(2 * (self.pad_size + 2) + 60),
+                                    int(2 * self.pad_size + 1024 / self.f_factor),
+                                ],
+                            ).eval(),
+                            self.batch_size * [self.f_factor],
+                            self.batch_size * [self.pad_size],
+                        )
+                    )
+                )
                 # store flags back in flag_array
                 for j, key in enumerate(keys):
                     blt1, blt2, pol = self.uvd._key2inds(key)

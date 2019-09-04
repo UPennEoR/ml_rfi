@@ -385,11 +385,11 @@ with tf.Session(config=config) as sess:
                 thresh = 0.329
             else:
                 thresh = 0.452
-            y_true = target_unfold[:, 64 * ci_1:1024 - 64 * ci_2].reshape(-1)
-            y_pred = pred_unfold[:, 64 * ci_1:1024 - 64 * ci_2].reshape(-1)
+            y_true = target_unfold[:, 64 * ci_1 : 1024 - 64 * ci_2].reshape(-1)
+            y_pred = pred_unfold[:, 64 * ci_1 : 1024 - 64 * ci_2].reshape(-1)
             if False:
                 y_pred = hf.hard_thresh(
-                    pred_unfold[:, 64 * ci_1:1024 - 64 * ci_2], thresh=thresh
+                    pred_unfold[:, 64 * ci_1 : 1024 - 64 * ci_2], thresh=thresh
                 ).reshape(-1)
 
             try:
@@ -405,23 +405,17 @@ with tf.Session(config=config) as sess:
             except BaseException:
                 ind += 1
                 continue
-            data_flux = np.abs(data_[:, 64 * ci_1:1024 - 64 * ci_2])
-            targets_ = target_unfold.reshape(-1, 1024)[:, 64 * ci_1:1024 - 64 * ci_2]
+            data_flux = np.abs(data_[:, 64 * ci_1 : 1024 - 64 * ci_2])
+            targets_ = target_unfold.reshape(-1, 1024)[:, 64 * ci_1 : 1024 - 64 * ci_2]
             predicts_0 = hf.unfoldl(
                 tf.reshape(g[:, :, 0], [16, ps, ps]).eval(), padding=16
-            ).reshape(-1, 1024)[:, 64 * ci_1:1024 - 64 * ci_2]
+            ).reshape(-1, 1024)[:, 64 * ci_1 : 1024 - 64 * ci_2]
             predicts_1 = hf.unfoldl(
                 tf.reshape(g[:, :, 1], [16, ps, ps]).eval(), padding=16
-            ).reshape(-1, 1024)[:, 64 * ci_1:1024 - 64 * ci_2]
-            predicts_ = (
-                predicts_1 - predicts_0
-            )
-            tp_sum = (
-                1.0
-            )
-            fn_sum = (
-                1.0
-            )
+            ).reshape(-1, 1024)[:, 64 * ci_1 : 1024 - 64 * ci_2]
+            predicts_ = predicts_1 - predicts_0
+            tp_sum = 1.0
+            fn_sum = 1.0
             tpr = tp / (1.0 * (tp + fn))  # recall
             fpr = tp / (1.0 * (tp + fp))  # precision/pos predictive value
             npv = tn / (1.0 * (tn + fn))  # neg predictive value
