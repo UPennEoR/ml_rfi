@@ -4,10 +4,10 @@
 
 from __future__ import print_function, division, absolute_import
 
+from time import time
 import numpy as np
 import tensorflow as tf
 import h5py
-from time import time
 import random
 from sklearn.metrics import confusion_matrix
 from scipy import ndimage
@@ -33,7 +33,7 @@ def normalize(X):
 
 
 def normphs(X):
-    """                                                                                                                                        
+    """
     Normalization for the phase in the folding proces.
     """
     sh = np.shape(X)
@@ -72,11 +72,11 @@ def pad(data, padding=2):
     Padding function applied to folded spectral windows.
     Reflection is default padding.
     """
-    
+
     sh = np.shape(data)
-    t_pad = 16#(sh[1] - sh[0]) / 2
-    data_pad = np.pad(data,pad_width=((t_pad + 2, t_pad + 2), (t_pad, t_pad)),mode='reflect')
-    
+    t_pad = 16
+    data_pad = np.pad(data, pad_width=((t_pad + 2, t_pad + 2), (t_pad, t_pad)), mode='reflect')
+
     return data_pad
 
 
@@ -86,29 +86,27 @@ def unpad(data, diff=4, padding=2):
     """
     sh = np.shape(data)
     t_unpad = sh[0]
-    return data[padding[0] : sh[0] - padding[0], padding[1] : sh[1] - padding[1]]
-
+    return data[padding[0]:sh[0] - padding[0], padding[1]:sh[1] - padding[1]]
 
 
 def store_iterator(it):
-    
     a = [x for x in it]
-    
+
     return np.array(a)
 
 
 def fold(data, ch_fold=16, padding=2):
     """
-    Folding function for carving waterfall visibilities with additional normalized log 
+    Folding function for carving waterfall visibilities with additional normalized log
     and phase channels.
     Input: (Batch, Time, Frequency)
-    Output: (Batch*FoldFactor, Time, Reduced Frequency, Channels) 
+    Output: (Batch*FoldFactor, Time, Reduced Frequency, Channels)
     """
     sh = np.shape(data)
     _data = data.T.reshape(ch_fold, int(sh[1] / ch_fold), -1)
-    _DATA = store_iterator(map(transpose,_data))
+    _DATA = store_iterator(map(transpose, _data))
     _DATApad = store_iterator(map(pad, _DATA))
-        
+
     DATA = np.stack(
         (
             store_iterator(map(normalize, _DATApad)),
@@ -117,23 +115,23 @@ def fold(data, ch_fold=16, padding=2):
         ),
         axis=-1
     )
-    
+
     return DATA
+
 
 def unfoldl(data_fold, ch_fold=16, padding=2):
     """
-    Unfolding function for recombining the carved label (flag) frequency windows back into a complete 
+    Unfolding function for recombining the carved label (flag) frequency windows back into a complete
     waterfall visibility.
     Input: (Batch*FoldFactor, Time, Reduced Frequency, Channels)
     Output: (Batch, Time, Frequency)
     """
-    
-    data_unpad = [unpad(b, ch_fold, (padding + 2, padding)) for b in data_fold]
-    #print("Unpad shape", np.shape(data_unpad))
+    sh = np.shape(data_fold)
+    data_unpad = data_fold[:, (padding + 2):(sh[1] - (padding + 2)), padding:sh[2] - padding]
     ch_fold, ntimes, dfreqs = np.shape(data_unpad)
-    data_ = np.array([transpose(x) for x in data_unpad])
+    data_ = np.transpose(data_unpad, (0, 2, 1))
     _data = data_.reshape(ch_fold * dfreqs, ntimes).T
-    
+
     return _data
 
 
@@ -208,7 +206,7 @@ def stacked_layer(
         pool = tf.layers.max_pooling2d(
             inputs=bnorm_conv, pool_size=pool, strides=stride
         )
-    elif maxpool == None:
+    elif maxpool is None:
         pool = bnorm_conv
     else:
         pool = tf.layers.average_pooling2d(
@@ -241,7 +239,7 @@ def accuracy(labels, predictions):
     print("total", total)
     try:
         return correct / total
-    except:
+    except BaseException:
         return 1.0
 
 
@@ -290,7 +288,7 @@ def SNRvsTPR(data, true_flags, flags):
         else:
             try:
                 tn, fp, fn, tp = confuse_mat.ravel()
-            except:
+            except BaseException:
                 tp = np.nan
                 fn = np.nan
         snr_tprs.append(MCC(tp, tn, fp, fn))
@@ -354,7 +352,7 @@ def load_pipeline_dset(stage_type):
             return f["uvOCRS"]
         elif stage_type == "uvOCRSD":
             return f["uvOCRSD"]
-    except:
+    except BaseException:
         return f
 
 
@@ -370,13 +368,13 @@ def stride(input_data, input_labels):
 
     x = np.array(
         [
-            input_data[:, i - spw_hw : i + spw_hw]
+            input_data[:, i - spw_hw:i + spw_hw]
             for i in range(spw_hw, 1024 - spw_hw, (nchans - 2 * spw_hw) / 60)
         ]
     )
     x_labels = np.array(
         [
-            input_labels[:, i - spw_hw : i + spw_hw]
+            input_labels[:, i - spw_hw:i + spw_hw]
             for i in range(spw_hw, 1024 - spw_hw, (nchans - 2 * spw_hw) / 60)
         ]
     )
@@ -440,7 +438,7 @@ def expand_dataset(data, labels):
 
 def expand_validation_dataset(data, labels):
     """
-    Validation dataset augmentation trick for expanding a small dataset with a 
+    Validation dataset augmentation trick for expanding a small dataset with a
     well known ground truth.
     """
     bloat = 10
@@ -694,9 +692,9 @@ class RFIDataset:
                 f_real_labels[: int(real_len / 2), :, :], dtype=np.int32
             ).reshape(-1, real_sh[1] * real_sh[2])
 
-            train_data = np.vstack((f_real[int(real_len / 2) :, :, :, :], f_sim))
+            train_data = np.vstack((f_real[int(real_len / 2):, :, :, :], f_sim))
             train_labels = np.vstack(
-                (f_real_labels[int(real_len / 2) :, :, :], f_sim_labels)
+                (f_real_labels[int(real_len / 2):, :, :], f_sim_labels)
             )
             hybrid_len = np.shape(train_data)[0]
             mix_ind = np.random.permutation(hybrid_len)
@@ -711,10 +709,10 @@ class RFIDataset:
             # Format evaluation dataset
             sim_len = np.shape(f_sim)[0]
             self.eval_data = np.asarray(
-                f_sim[int(sim_len * 0.8) :, :, :, :], dtype=d_type
+                f_sim[int(sim_len * 0.8):, :, :, :], dtype=d_type
             )
             self.eval_labels = np.asarray(
-                f_sim_labels[int(sim_len * 0.8) :, :, :], dtype=np.int32
+                f_sim_labels[int(sim_len * 0.8):, :, :], dtype=np.int32
             ).reshape(-1, real_sh[1] * real_sh[2])
             eval1 = np.shape(self.eval_data)[0]
 
@@ -787,10 +785,10 @@ class RFIDataset:
         sim_sh = np.shape(f_sim)
         print("Sim Shape", sim_sh)
         self.eval_data = np.asarray(
-            f_sim[int(sim_len * 0.8) :, :, :, :], dtype=d_type
+            f_sim[int(sim_len * 0.8):, :, :, :], dtype=d_type
         ).reshape(-1, sim_sh[1], sim_sh[2], 2)
         self.eval_labels = np.asarray(
-            f_sim_labels[int(sim_len * 0.8) :, :, :], dtype=np.int32
+            f_sim_labels[int(sim_len * 0.8):, :, :], dtype=np.int32
         ).reshape(-1, sim_sh[1] * sim_sh[2])
         eval1 = np.shape(self.eval_data)[0]
         # Format training dataset

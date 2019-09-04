@@ -1,24 +1,22 @@
 from __future__ import division, print_function, absolute_import
-import matplotlib
 
-matplotlib.use("AGG")
-import matplotlib.pyplot as plt
-import numpy as np
-import tensorflow as tf
-from glob import glob
-import sys
-
-sys.path.append("./ml_rfi/")
-print(sys.path)
-import helper_functions as hf
-from time import time
 import os
+import sys
+from glob import glob
+from time import time
+from copy import copy
+
+import numpy as np
+import h5py
+import matplotlib
+import matplotlib.pyplot as plt
+import tensorflow as tf
 from sklearn.metrics import roc_curve
 from sklearn.metrics import confusion_matrix
-from copy import copy
-import h5py
-from AmpModel import AmpFCN
-from AmpPhsModel import AmpPhsFCN
+
+from ml_rfi import helper_functions as hf
+from ml_rfi.AmpModel import AmpFCN
+from ml_rfi.AmpPhsModel import AmpPhsFCN
 
 # Run on a single GPU
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -39,7 +37,7 @@ tdset_version = args[0]  # which training dataset version to use
 FCN_version = args[1]  # which FCN version number
 try:
     vdset = args[10]
-except:
+except BaseException:
     vdset = ""
 tdset_type = "Sim"  # type of training dataset used
 edset_type = "Real"  # type of eval dataset used
@@ -83,7 +81,7 @@ try:
     model = "model_" + str(models2sort[model_ind]) + ".ckpt"
     start_step = int(model.split("_")[1].split(".ckpt")[0])
     print(model)
-except:
+except BaseException:
     start_step = 0
 
 print("Starting training at step %i" % start_step)
@@ -387,11 +385,11 @@ with tf.Session(config=config) as sess:
                 thresh = 0.329
             else:
                 thresh = 0.452
-            y_true = target_unfold[:, 64 * ci_1 : 1024 - 64 * ci_2].reshape(-1)
-            y_pred = pred_unfold[:, 64 * ci_1 : 1024 - 64 * ci_2].reshape(-1)
+            y_true = target_unfold[:, 64 * ci_1:1024 - 64 * ci_2].reshape(-1)
+            y_pred = pred_unfold[:, 64 * ci_1:1024 - 64 * ci_2].reshape(-1)
             if False:
                 y_pred = hf.hard_thresh(
-                    pred_unfold[:, 64 * ci_1 : 1024 - 64 * ci_2], thresh=thresh
+                    pred_unfold[:, 64 * ci_1:1024 - 64 * ci_2], thresh=thresh
                 ).reshape(-1)
 
             try:
@@ -404,27 +402,26 @@ with tf.Session(config=config) as sess:
                     fp = 1e-10
                 else:
                     tn, fp, fn, tp = confusion_pred.ravel()
-            except:
+            except BaseException:
                 ind += 1
                 continue
-            data_flux = np.abs(data_[:, 64 * ci_1 : 1024 - 64 * ci_2])
-            targets_ = target_unfold.reshape(-1, 1024)[:, 64 * ci_1 : 1024 - 64 * ci_2]
-            # predicts_ = hf.unfoldl(tf.reshape(g[:,:,1],[16,68,68]).eval()).reshape(-1,1024)[:,64*ci_1:1024-64*ci_2]
+            data_flux = np.abs(data_[:, 64 * ci_1:1024 - 64 * ci_2])
+            targets_ = target_unfold.reshape(-1, 1024)[:, 64 * ci_1:1024 - 64 * ci_2]
             predicts_0 = hf.unfoldl(
                 tf.reshape(g[:, :, 0], [16, ps, ps]).eval(), padding=16
-            ).reshape(-1, 1024)[:, 64 * ci_1 : 1024 - 64 * ci_2]
+            ).reshape(-1, 1024)[:, 64 * ci_1:1024 - 64 * ci_2]
             predicts_1 = hf.unfoldl(
                 tf.reshape(g[:, :, 1], [16, ps, ps]).eval(), padding=16
-            ).reshape(-1, 1024)[:, 64 * ci_1 : 1024 - 64 * ci_2]
+            ).reshape(-1, 1024)[:, 64 * ci_1:1024 - 64 * ci_2]
             predicts_ = (
                 predicts_1 - predicts_0
-            )  # np.where(predicts_1>predicts_0,predicts_1,0.)
+            )
             tp_sum = (
                 1.0
-            )  # np.sum(np.where(targets_+predicts_ == 2,data_flux,np.zeros_like(data_flux)))
+            )
             fn_sum = (
                 1.0
-            )  # np.sum(np.where(targets_-predicts_ == 1,data_flux,np.zeros_like(data_flux)))
+            )
             tpr = tp / (1.0 * (tp + fn))  # recall
             fpr = tp / (1.0 * (tp + fp))  # precision/pos predictive value
             npv = tn / (1.0 * (tn + fn))  # neg predictive value
@@ -478,7 +475,6 @@ with tf.Session(config=config) as sess:
         print("F2: {0}".format(np.nanmean(f2_arr)))
 
         if ROC:
-            #        try:
             f = h5py.File("KernelSize_TPFPrates_AllData" + vdset + ".h5", "a")
             try:
                 mname = f.create_group(model_name + vdset)
@@ -490,7 +486,7 @@ with tf.Session(config=config) as sess:
                 mname.create_dataset("Identified Flux", data=ident_flux)
                 mname.create_dataset("Missed Flux", data=missed_flux)
                 f.close()
-            except:
+            except BaseException:
                 print("Data group already exists.")
                 mname = f.require_group(model_name + vdset)
                 mname["FPR"][...] = fpr_arr

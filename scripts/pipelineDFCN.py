@@ -1,19 +1,20 @@
 from __future__ import division, print_function, absolute_import
-import matplotlib
 
-matplotlib.use("AGG")
-import matplotlib.pyplot as plt
-import numpy as np
-import tensorflow as tf
-from glob import glob
-import ml_rfi.helper_functions as hf
-from time import time
 import os
+import sys
+from time import time
+from glob import glob
+from copy import copy
+
+import numpy as np
+import h5py
+import matplotlib
+import matplotlib.pyplot as plt
+import tensorflow as tf
 from sklearn.metrics import roc_curve
 from sklearn.metrics import confusion_matrix
-import sys
-from copy import copy
-import h5py
+
+import ml_rfi.helper_functions as hf
 from ml_rfi.AmpModel import AmpFCN
 from ml_rfi.AmpPhsModel import AmpPhsFCN
 
@@ -32,10 +33,7 @@ mods = "test"
 pad_size = 16  # 68
 f_factor = 16
 slice_size = 16
-# model_name = 'AmpPhsv9SimRealv13_64BSize_ExpandedDataset_Softmax_1x_DOUT0.8_Converge_teval' #chtypes+FCN_version+tdset_type+edset_type+tdset_version+'_'+'64'+'BSize'+mods
-# model_name = 'AmpPhsv9SimRealv13_64BSizeNew'
 model_name = "AmpPhsv9SimRealv13_64BSizeDynamicVis"
-# model_name = 'Ampv7SimRealv13_64BSize_ExpandedDataset_Softmax_1x_DOUT0.8_Converge_teval'
 model_dir = glob("./" + model_name + "/model_*")
 
 try:
@@ -46,7 +44,7 @@ try:
     model_ind = np.argmax(models2sort)
     model = "model_" + str(models2sort[model_ind]) + ".ckpt"
     print(model)
-except:
+except OSError:
     print("Cannot find model.")
 
 vis_input = tf.placeholder(

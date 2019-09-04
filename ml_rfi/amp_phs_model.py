@@ -10,9 +10,9 @@ from . import helper_functions as hf
 
 
 def AmpPhsFCN(x, reuse=None, mode_bn=True, d_out=0.0):
-    """                                                                                                                                        
-    Amplitude only Fully Convolutional Neural Network Model. Uses 6 convolutional layers in the downsampling                                    
-    stage, into 2 fully connected layers, and upsampled through 4 transpose convolutional layers.                                              
+    """
+    Amplitude only Fully Convolutional Neural Network Model. Uses 6 convolutional layers in the downsampling
+    stage, into 2 fully connected layers, and upsampled through 4 transpose convolutional layers.
     """
 
     with tf.variable_scope("FCN", reuse=reuse):
