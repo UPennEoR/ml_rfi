@@ -13,9 +13,11 @@ import h5py
 from sklearn.metrics import confusion_matrix
 from scipy import ndimage
 import tensorflow as tf
+import keras
 from keras import backend as K
 from keras.models import load_model
 
+from . import keras_model
 
 def transpose(X):
     """
@@ -966,7 +968,8 @@ def keras_convert_wf(wf, Nt_min=64, Nf_min=64):
     # maybe pad times
     if input_shape[1] < Nt_min:
         # pad it out
-        Npad = (Nt_min - input_shape[1]) // 2 + 1  # extra 1 in case difference is odd
+        diff = Nt_min - input_shape[1]
+        Npad = diff // 2 + diff % 2  # extra 1 in case difference is odd
         wf_amp = np.pad(wf_amp, ((0, 0), (Npad, Npad), (0, 0), (0, 0)),
                         mode="reflect")
         wf_phs = np.pad(wf_phs, ((0, 0), (Npad, Npad), (0, 0), (0, 0)),
@@ -975,7 +978,8 @@ def keras_convert_wf(wf, Nt_min=64, Nf_min=64):
     # maybe pad freqs
     if input_shape[2] < Nf_min:
         # pad it out
-        Npad = (Nf_min - input_shape[2]) // 2 + 1  # extra 1 in case difference is odd
+        diff = Nf_min - input_shape[2]
+        Npad = diff // 2 + diff % 2  # extra 1 in case difference is odd
         wf_amp = np.pad(wf_amp, ((0, 0), (0, 0), (Npad, Npad), (0, 0)),
                         mode="reflect")
         wf_phs = np.pad(wf_phs, ((0, 0), (0, 0), (Npad, Npad), (0, 0)),
@@ -1010,23 +1014,23 @@ def keras_convert_flags(flags, Nt_min=64, Nf_min=64):
     """
     if len(flags.shape) != 3:
         raise ValueError("flags should be a 3-dimensional ndarray")
-    if wf.dtype is not np.bool:
-        raise ValueError("flags should have a boolean dtype")
-    input_shape = wf.shape
+    input_shape = flags.shape
     # convert to int
     flags_out = flags.astype(np.int32).reshape((*input_shape, 1))
 
     # maybe pad times
     if input_shape[1] < Nt_min:
         # pad it out
-        Npad = (Nt_min - input_shape[1]) // 2 + 1  # extra 1 in case difference is odd
+        diff = Nt_min - input_shape[1]
+        Npad = diff // 2 + diff % 2  # extra 1 in case difference is odd
         flags_out = np.pad(flags_out, ((0, 0), (Npad, Npad), (0, 0), (0, 0)),
                            mode="reflect")
 
     # maybe pad freqs
     if input_shape[2] < Nf_min:
         # pad it out
-        Npad = (Nf_min - input_shape[2]) // 2 + 1  # extra 1 in case difference is odd
+        diff = Nf_min - input_shape[2]
+        Npad = diff // 2 + diff % 2  # extra 1 in case difference is odd
         flags_out = np.pad(flags_out, ((0, 0), (0, 0), (Npad, Npad), (0, 0)),
                            mode="reflect")
 
@@ -1094,8 +1098,8 @@ def keras_f2_metric(y_true, y_pred):
         recall metrics. The F2 score weights recall higher than precision, which
         places a greater emphasis on false negatives.
     """
-    precision = precision_metric(y_true, y_pred)
-    recall = recall_metric(y_true, y_pred)
+    precision = keras_precision_metric(y_true, y_pred)
+    recall = keras_recall_metric(y_true, y_pred)
     f2 = (1 + 2 ** 2) * (precision * recall) / (2 ** 2 * precision + recall + K.epsilon())
     return f2
 
@@ -1122,7 +1126,7 @@ class KerasFitter(object):
 
         return
 
-    def load_data():
+    def load_data(self):
         """Load the data and make sure it's the right size.
 
         Parameters
@@ -1143,6 +1147,7 @@ class KerasFitter(object):
             This is raised if the training data and flags are not the same size,
             or if the testing data and flags are not the same size.
         """
+        print("Reading data from {}...".format(self.data_fn))
         with h5py.File(self.data_fn, "r") as f:
             train_data = f["data"][:self.n_train, :, :]
             train_flag = f["flag"][:self.n_train, :, :]
@@ -1150,10 +1155,11 @@ class KerasFitter(object):
             test_flag = f["flag"][self.n_train:self.n_train + self.n_test, :, :]
 
         # resize data as necessary
+        print("Formatting data...")
         self.train_data_amp, self.train_data_phs = keras_convert_wf(train_data)
-        self.train_flag = keras_convert_flag(train_flag)
+        self.train_flag = keras_convert_flags(train_flag)
         self.test_data_amp, self.test_data_phs = keras_convert_wf(test_data)
-        self.test_flag = keras_convert_flag(test_flag)
+        self.test_flag = keras_convert_flags(test_flag)
 
         # make sure things are the right size/shape
         assert self.train_data_amp.shape == self.train_data_phs.shape
@@ -1164,11 +1170,12 @@ class KerasFitter(object):
         return
 
     def train_model(
+            self,
             batch_normalize=True,
             dropout_rate=0.4,
             alpha=0.2,
             pool_size=(2, 2),
-            pool_stride=(2,2),
+            pool_stride=(2, 2),
             optimizer="adam",
             loss="sparse_categorical_crossentropy",
             metrics=["sparse_categorical_accuracy"],
@@ -1230,9 +1237,9 @@ class KerasFitter(object):
         ValueError
             This is raised if the training data is not present on the object.
         """
-        if not hasattr(self, train_data_amp):
+        if not hasattr(self, "train_data_amp"):
             raise ValueError("The `load_data` method must be called before training.")
-        if not hasattr(self, model):
+        if not hasattr(self, "model"):
             # make a new model
             input_shape = self.train_data_amp.shape[1:]
             model = keras_model.amp_phs_model(
@@ -1273,7 +1280,7 @@ class KerasFitter(object):
 
         return
 
-    def save_model(model_fn):
+    def save_model(self, model_fn):
         """Save a trained Keras model to disk.
 
         Parameters
@@ -1290,13 +1297,14 @@ class KerasFitter(object):
         ValueError
             This is raised if a model attribute is not present on the object.
         """
-        if not hasattr(self, model):
+        if not hasattr(self, "model"):
             raise ValueError("The `train_model` method must be called before "
                              "saving the model.")
+        print("Saving {}...".format(model_fn))
         self.model.save(model_fn)
         return
 
-    def load_model(model_fn, overwrite_model=False):
+    def load_model(self, model_fn, overwrite_model=False):
         """Load a trained Keras model from disk.
 
         Parameters
@@ -1315,7 +1323,7 @@ class KerasFitter(object):
             thus would be replaced by the model on disk, but the user has not
             explicitly allowed for the model to be overwritten.
         """
-        if hasattr(self, model) and not overwrite_model:
+        if hasattr(self, "model") and not overwrite_model:
             raise ValueError("The object already has a `model` defined, and "
                              "reading in from disk would overwrite this model. "
                              "Run with overwrite_model=True to replace the model "
@@ -1324,7 +1332,7 @@ class KerasFitter(object):
 
         return
 
-    def make_prediction(input_data):
+    def make_prediction(self, input_data):
         """Make a prediction on new data.
 
         Parameters
@@ -1340,7 +1348,7 @@ class KerasFitter(object):
             The predicted flags for the input data, of size (Nwaterfalls, Ntimes,
             Nfreqs) and boolean dtype.
         """
-        if not hasattr(self, model):
+        if not hasattr(self, "model"):
             raise ValueError("A model must be trained or loaded before prediction "
                              "can be done.")
         input_shape = input_data.shape

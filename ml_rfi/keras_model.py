@@ -293,7 +293,7 @@ def amp_phs_model(
 
     # upsample again
     nfilters = 32 * filter_factor
-    conv_stride = (5, 4)
+    conv_stride = (4, 4)
     upsample2 = upsample_layer(
         upsample1,
         nfilters,
@@ -343,11 +343,13 @@ def amp_phs_model(
     output = Activation("softmax")(output)
 
     # check that the output layer is the right size for the input
-    if output.shape != input_shape:
+    output_shape = output.shape[1:3]
+    input_shape = input_shape[:2]
+    if output_shape != input_shape:
         raise ValueError("The output shape is different from the input shape; "
                          "output has shape {} and input has shape {}. Please "
                          "check the size and stride of max pooling layers and "
-                         "try again.".format(str(output.shape), str(input_shape)))
+                         "try again.".format(str(output_shape), str(input_shape)))
 
     # Define the model
     model = Model(inputs=[amp_input, phs_input], outputs=[output])
