@@ -5,13 +5,16 @@
 from __future__ import print_function, division, absolute_import
 
 from time import time
-import numpy as np
-import tensorflow as tf
-import h5py
 import random
+from copy import copy
+
+import numpy as np
+import h5py
 from sklearn.metrics import confusion_matrix
 from scipy import ndimage
-from copy import copy
+import tensorflow as tf
+from keras import backend as K
+from keras.models import load_model
 
 
 def transpose(X):
@@ -914,3 +917,433 @@ class RFIDataset:
     def get_size(self):
         # Return dataset size
         return self.dset_size
+
+
+# Keras helper functions
+def keras_convert_wf(wf, Nt_min=64, Nf_min=64):
+    """Convert an input waterfall to the correct type expected by the Keras model.
+
+    Due to the max pooling in the Keras model, we may need to pad the input
+    waterfall to be the correct shape. This padding will be done symmetrically
+    on both ends of the waterfall.
+
+    Parameters
+    ----------
+    wf : ndarray
+        A 3d ndarray of shape (Nbatch, Ntimes, Nfreq) and complex dtype. Will
+        be padded if dimension aare not sufficient for the given input.
+    Nt_min : int
+        The minimum size of the waterfall along the time dimension.
+    Nf_min : int
+        The minimum size of the waterfall along the frequency dimension.
+
+    Returns
+    -------
+    wf_amp : ndarray
+        A 4d ndarray of shape (Nbatch, Ntimes', Nfreq', 1) and real dtype.
+        Ntimes' and Nfreq' will be padded if they are not sufficiently
+        large for the given model. The last axis is log10(amp) of the
+        input complex number.
+
+    wf_phs : ndarray
+        A 4d ndarray of shape (Nbatch, Ntimes', Nfreq', 1) and real dtype.
+        Ntimes' and Nfreq' will be padded if they are not sufficiently
+        large for the given model. The last axis is phase (angle) of the
+        input complex number.
+    """
+    if len(wf.shape) != 3:
+        raise ValueError("wf should be a 3-dimensional ndarray")
+    if wf.dtype not in (np.complex, np.complex64, np.complex128):
+        raise ValueError("wf should have a complex dtype")
+    input_shape = wf.shape
+    # convert to amplitude and phase
+    wf_amp = np.empty((*input_shape, 1), dtype=np.float)
+    wf_phs = np.empty((*input_shape, 1), dtype=np.float)
+
+    wf_amp[:, :, :, 0] = np.log10(np.abs(wf))
+    wf_phs[:, :, :, 0] = np.angle(wf)
+
+    # maybe pad times
+    if input_shape[1] < Nt_min:
+        # pad it out
+        Npad = (Nt_min - input_shape[1]) // 2 + 1  # extra 1 in case difference is odd
+        wf_amp = np.pad(wf_amp, ((0, 0), (Npad, Npad), (0, 0), (0, 0)),
+                        mode="reflect")
+        wf_phs = np.pad(wf_phs, ((0, 0), (Npad, Npad), (0, 0), (0, 0)),
+                        mode="reflect")
+
+    # maybe pad freqs
+    if input_shape[2] < Nf_min:
+        # pad it out
+        Npad = (Nf_min - input_shape[2]) // 2 + 1  # extra 1 in case difference is odd
+        wf_amp = np.pad(wf_amp, ((0, 0), (0, 0), (Npad, Npad), (0, 0)),
+                        mode="reflect")
+        wf_phs = np.pad(wf_phs, ((0, 0), (0, 0), (Npad, Npad), (0, 0)),
+                        mode="reflect")
+
+    return wf_amp, wf_phs
+
+
+def keras_convert_flags(flags, Nt_min=64, Nf_min=64):
+    """Convert an input flag array to the correct type expected by the Keras model.
+
+    Due to the max pooling in the Keras model, we may need to pad the input
+    flags to be the correct shape. This padding will be done symmetrically
+    on both ends of the flag waterfall.
+
+    Parameters
+    ----------
+    flags : ndarray
+        A 3d ndarray of shape (Nbatch, Ntimes, Nfreq) and boolean dtype. Will
+        be padded if dimension aare not sufficient for the given input.
+    Nt_min : int
+        The minimum size of the waterfall along the time dimension.
+    Nf_min : int
+        The minimum size of the waterfall along the frequency dimension.
+
+    Returns
+    -------
+    flags_out : ndarray
+        A 4d ndarray of shape (Nbatch, Ntimes', Nfreq', 1) and integer dtype.
+        Ntimes' and Nfreq' will be padded if they are not sufficiently
+        large for the given model.
+    """
+    if len(flags.shape) != 3:
+        raise ValueError("flags should be a 3-dimensional ndarray")
+    if wf.dtype is not np.bool:
+        raise ValueError("flags should have a boolean dtype")
+    input_shape = wf.shape
+    # convert to int
+    flags_out = flags.astype(np.int32).reshape((*input_shape, 1))
+
+    # maybe pad times
+    if input_shape[1] < Nt_min:
+        # pad it out
+        Npad = (Nt_min - input_shape[1]) // 2 + 1  # extra 1 in case difference is odd
+        flags_out = np.pad(flags_out, ((0, 0), (Npad, Npad), (0, 0), (0, 0)),
+                           mode="reflect")
+
+    # maybe pad freqs
+    if input_shape[2] < Nf_min:
+        # pad it out
+        Npad = (Nf_min - input_shape[2]) // 2 + 1  # extra 1 in case difference is odd
+        flags_out = np.pad(flags_out, ((0, 0), (0, 0), (Npad, Npad), (0, 0)),
+                           mode="reflect")
+
+    return flags_out
+
+
+def keras_recall_metric(y_true, y_pred):
+    """Define a recall metric to use in Keras.
+
+    Parameters
+    ----------
+    y_true : ndarray
+        The "true" values according to Keras.
+    y_pred : ndarray
+        The "predicted" values according to Keras.
+
+    Returns
+    -------
+    recall : float
+        The recall value, defined as the number true positives divided by the
+        total number of positives.
+    """
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+    recall = true_positives / (possible_positives + K.epsilon())
+    return recall
+
+
+def keras_precision_metric(y_true, y_pred):
+    """Define a precision metric to use in Keras.
+
+    Parameters
+    ----------
+    y_true : ndarray
+        The "true" values according to Keras.
+    y_pred : ndarray
+        The "predicted" values according to Keras.
+
+    Returns
+    -------
+    precision : float
+        The precision value, defined as the number of true positives divided
+        by the number of predicted positives.
+    """
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+    precision = true_positives / (predicted_positives + K.epsilon())
+    return precision
+
+
+def keras_f2_metric(y_true, y_pred):
+    """Define a F2 metric to use in Keras.
+
+    Parameters
+    ----------
+    y_true : ndarray
+        The "true" values according to Keras.
+    y_pred : ndarray
+        The "predicted" values according to Keras.
+
+    Returns
+    -------
+    f2 : float
+        The F2 metric, which is a weighted combination of the precision and
+        recall metrics. The F2 score weights recall higher than precision, which
+        places a greater emphasis on false negatives.
+    """
+    precision = precision_metric(y_true, y_pred)
+    recall = recall_metric(y_true, y_pred)
+    f2 = (1 + 2 ** 2) * (precision * recall) / (2 ** 2 * precision + recall + K.epsilon())
+    return f2
+
+
+class KerasFitter(object):
+    """A class for fitting the Keras model given some input data.
+
+    Parameters
+    ----------
+    data_fn : str
+        The full path to the data to use for training and testing.
+
+    n_train : int
+        The number of samples to use as training data.
+
+    n_test : int
+        The number of samples to use as testing/evaluation data.
+    """
+    def __init__(self, data_fn, n_train, n_test):
+        """Initialize the object."""
+        self.data_fn = data_fn
+        self.n_train = n_train
+        self.n_test = n_test
+
+        return
+
+    def load_data():
+        """Load the data and make sure it's the right size.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        This method will save the training and testing data on the object.
+
+        Raises
+        ------
+        AssertionError
+            This is raised if the training data and flags are not the same size,
+            or if the testing data and flags are not the same size.
+        """
+        with h5py.File(self.data_fn, "r") as f:
+            train_data = f["data"][:self.n_train, :, :]
+            train_flag = f["flag"][:self.n_train, :, :]
+            test_data = f["data"][self.n_train:self.n_train + self.n_test, :, :]
+            test_flag = f["flag"][self.n_train:self.n_train + self.n_test, :, :]
+
+        # resize data as necessary
+        self.train_data_amp, self.train_data_phs = keras_convert_wf(train_data)
+        self.train_flag = keras_convert_flag(train_flag)
+        self.test_data_amp, self.test_data_phs = keras_convert_wf(test_data)
+        self.test_flag = keras_convert_flag(test_flag)
+
+        # make sure things are the right size/shape
+        assert self.train_data_amp.shape == self.train_data_phs.shape
+        assert self.train_data_amp.shape == self.train_flag.shape
+        assert self.test_data_amp.shape == self.test_data_phs.shape
+        assert self.test_data_amp.shape == self.test_flag.shape
+
+        return
+
+    def train_model(
+            batch_normalize=True,
+            dropout_rate=0.4,
+            alpha=0.2,
+            pool_size=(2, 2),
+            pool_stride=(2,2),
+            optimizer="adam",
+            loss="sparse_categorical_crossentropy",
+            metrics=["sparse_categorical_accuracy"],
+            tb_callback=True,
+            epochs=200,
+            batch_size=32,
+            verbose=False,
+    ):
+        """Train a Keras model with the loaded dataset.
+
+        Many of the options for this method are based on those in the
+        keras_model.amp_phs_model function. See the documentation there for
+        more details.
+
+        Parameters
+        ----------
+        batch_normalize : bool
+            Whether to apply batch normalization layers to the models.
+        dropout_rate : float
+            What dropout rate to use for dropout layers.
+        alpha : float
+            What alpha value to use for Leaky ReLU layers.
+        pool_size : tuple of ints
+            What pool size to use.
+        pool_stride : tuple of ints
+            What pool stride to use.
+        optimizer : str
+            Which optimizer to use for training the model. It will be passed
+            into the model.compile method as the "optimizer" kwarg.
+        loss : str
+            Which loss to use for training the model. It will be passed into
+            the model.compile method as the "loss" kwarg.
+        metrics : list of str or functions
+            The metrics to use for the Keras training process. Entries in the
+            list should be strings of pre-programmed Keras metrics or functions
+            that can be applied to the output (e.g., as in the
+            `keras_recall_metric` function defined above).
+        tb_callback : bool
+            Whether to have a callback to TensorBoard as part of the fit process.
+            Output will be saved to a directory called "logs" in the current
+            working directory.
+        epochs : int
+            The number of epochs to train the model for.
+        batch_size : int
+            The batch size to use during training.
+        verbose : bool
+            Whether to print a summary of the Keras model or not.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        The trained model will be saved on the object.
+
+        Raises
+        ------
+        ValueError
+            This is raised if the training data is not present on the object.
+        """
+        if not hasattr(self, train_data_amp):
+            raise ValueError("The `load_data` method must be called before training.")
+        if not hasattr(self, model):
+            # make a new model
+            input_shape = self.train_data_amp.shape[1:]
+            model = keras_model.amp_phs_model(
+                input_shape,
+                batch_normalize=batch_normalize,
+                dropout_rate=dropout_rate,
+                alpha=alpha,
+                pool_size=pool_size,
+                pool_stride=pool_stride,
+            )
+            self.model = model
+
+        if verbose:
+            print(self.model.summary())
+
+        # compile model
+        model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
+
+        if tb_callback:
+            tb = keras.callbacks.TensorBoard(log_dir="./logs")
+            callbacks = [tb]
+        else:
+            callbacks = []
+
+        # fit model
+        model.fit(
+            [self.train_data_amp, self.train_data_phs],
+            [self.train_flag],
+            validation_data=([self.test_data_amp, self.test_data_phs],
+                             [self.test_flag]),
+            epochs=epochs,
+            batch_size=batch_size,
+            callbacks=callbacks,
+        )
+
+        # save trained model on the object
+        self.model = model
+
+        return
+
+    def save_model(model_fn):
+        """Save a trained Keras model to disk.
+
+        Parameters
+        ----------
+        model_fn : str
+            The full path to the location to save the file.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            This is raised if a model attribute is not present on the object.
+        """
+        if not hasattr(self, model):
+            raise ValueError("The `train_model` method must be called before "
+                             "saving the model.")
+        self.model.save(model_fn)
+        return
+
+    def load_model(model_fn, overwrite_model=False):
+        """Load a trained Keras model from disk.
+
+        Parameters
+        ----------
+        model_fn : str
+            The full path to the location of the model file.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            This error is raised if the `model` attribute already exists and
+            thus would be replaced by the model on disk, but the user has not
+            explicitly allowed for the model to be overwritten.
+        """
+        if hasattr(self, model) and not overwrite_model:
+            raise ValueError("The object already has a `model` defined, and "
+                             "reading in from disk would overwrite this model. "
+                             "Run with overwrite_model=True to replace the model "
+                             "on the object.")
+        self.model = load_model(model_fn)
+
+        return
+
+    def make_prediction(input_data):
+        """Make a prediction on new data.
+
+        Parameters
+        ----------
+        input_data : ndarray
+            The data to run prediction on, with shape (Nwaterfalls, Ntimes, Nfreqs).
+            and complex dtype. It should have the same time and frequency
+            dimensionality used to train the model.
+
+        Returns
+        -------
+        predicted_flags : ndarray
+            The predicted flags for the input data, of size (Nwaterfalls, Ntimes,
+            Nfreqs) and boolean dtype.
+        """
+        if not hasattr(self, model):
+            raise ValueError("A model must be trained or loaded before prediction "
+                             "can be done.")
+        input_shape = input_data.shape
+        input_data_amp, input_data_phs = keras_convert_wf(input_data)
+        predicted_flags = model.predict([input_data_amp, input_data_phs])
+        return predicted_flags.astype(np.bool).reshape(input_shape)
