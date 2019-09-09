@@ -1374,5 +1374,5 @@ class KerasFitter(object):
             )
         input_shape = input_data.shape
         input_data_amp, input_data_phs = keras_convert_wf(input_data)
-        predicted_flags = model.predict([input_data_amp, input_data_phs])
+        predicted_flags = self.model.predict([input_data_amp, input_data_phs])
         return predicted_flags.astype(np.bool).reshape(input_shape)
