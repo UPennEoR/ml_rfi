@@ -1109,29 +1109,26 @@ class KerasFitter(object):
 
     Parameters
     ----------
-    data_fn : str
-        The full path to the data to use for training and testing.
-
-    n_train : int
-        The number of samples to use as training data.
-
-    n_test : int
-        The number of samples to use as testing/evaluation data.
+    None
     """
-    def __init__(self, data_fn, n_train, n_test):
+    def __init__(self):
         """Initialize the object."""
-        self.data_fn = data_fn
-        self.n_train = n_train
-        self.n_test = n_test
 
         return
 
-    def load_data(self):
+    def load_data(self, data_fn, n_train, n_test):
         """Load the data and make sure it's the right size.
 
         Parameters
         ----------
-        None
+        data_fn : str
+            The full path to the data to use for training and testing.
+
+        n_train : int
+            The number of samples to use as training data.
+
+        n_test : int
+            The number of samples to use as testing/evaluation data.
 
         Returns
         -------
@@ -1147,6 +1144,11 @@ class KerasFitter(object):
             This is raised if the training data and flags are not the same size,
             or if the testing data and flags are not the same size.
         """
+        # save attributes
+        self.data_fn = data_fn
+        self.n_train = n_train
+        self.n_test = n_test
+
         print("Reading data from {}...".format(self.data_fn))
         with h5py.File(self.data_fn, "r") as f:
             train_data = f["data"][:self.n_train, :, :]
