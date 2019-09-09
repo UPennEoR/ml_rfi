@@ -4,19 +4,20 @@
 
 from keras.models import Model
 from keras.layers import Activation, BatchNormalization, concatenate, Conv2D
-from keras.layers import Conv2DTranspose, Dropout, Input, LeakyReLU, MaxPooling2D, Reshape
+from keras.layers import Conv2DTranspose, Dropout, Input, LeakyReLU
+from keras.layers import MaxPooling2D, Reshape
 from keras_layer_normalization import LayerNormalization
 
 
 def stacked_layer(
-        input_layer,
-        nfilters,
-        kernel_size=3,
-        batch_normalize=True,
-        dropout_rate=0.7,
-        alpha=0.2,
-        pool_size=(2, 2),
-        pool_stride=(2, 2),
+    input_layer,
+    nfilters,
+    kernel_size=3,
+    batch_normalize=True,
+    dropout_rate=0.7,
+    alpha=0.2,
+    pool_size=(2, 2),
+    pool_stride=(2, 2),
 ):
     """Make a "stacked layer" for adding to the model.
 
@@ -71,13 +72,13 @@ def stacked_layer(
 
 
 def upsample_layer(
-        input_layer,
-        nfilters,
-        kernel_size=3,
-        conv_stride=(1, 1),
-        batch_normalize=True,
-        dropout_rate=0.7,
-        alpha=0.2,
+    input_layer,
+    nfilters,
+    kernel_size=3,
+    conv_stride=(1, 1),
+    batch_normalize=True,
+    dropout_rate=0.7,
+    alpha=0.2,
 ):
     """Make an upsampling layer.
 
@@ -114,8 +115,9 @@ def upsample_layer(
     layer : Keras layer
         The output layer following the upsampling.
     """
-    layer = Conv2DTranspose(nfilters, kernel_size=kernel_size, strides=conv_stride,
-                            padding="same")(input_layer)
+    layer = Conv2DTranspose(
+        nfilters, kernel_size=kernel_size, strides=conv_stride, padding="same"
+    )(input_layer)
     layer = LeakyReLU(alpha=alpha)(layer)
     if batch_normalize:
         layer = BatchNormalization()(layer)
@@ -156,14 +158,14 @@ def apply_layer_normalization(layer1, layer2, layer3, dropout_rate=0.7):
 
 
 def amp_phs_model(
-        input_shape,
-        kernel_size=3,
-        filter_factor=2,
-        batch_normalize=True,
-        dropout_rate=0.0,
-        alpha=0.2,
-        pool_size=(2, 2),
-        pool_stride=(2, 2),
+    input_shape,
+    kernel_size=3,
+    filter_factor=2,
+    batch_normalize=True,
+    dropout_rate=0.0,
+    alpha=0.2,
+    pool_size=(2, 2),
+    pool_stride=(2, 2),
 ):
     """Make a Keras model for using amplitude and phase to predict RFI.
 
@@ -215,55 +217,139 @@ def amp_phs_model(
 
     # add stacked layers for amplitude branch
     nfilters = 8 * filter_factor
-    s1a = stacked_layer(amp_input, nfilters, kernel_size=kernel_size,
-                        batch_normalize=batch_normalize, dropout_rate=dropout_rate,
-                        alpha=alpha, pool_size=pool_size, pool_stride=pool_stride)
+    s1a = stacked_layer(
+        amp_input,
+        nfilters,
+        kernel_size=kernel_size,
+        batch_normalize=batch_normalize,
+        dropout_rate=dropout_rate,
+        alpha=alpha,
+        pool_size=pool_size,
+        pool_stride=pool_stride,
+    )
     nfilters = 16 * filter_factor
-    s2a = stacked_layer(s1a, nfilters, kernel_size=kernel_size,
-                        batch_normalize=batch_normalize, dropout_rate=dropout_rate,
-                        alpha=alpha, pool_size=pool_size, pool_stride=pool_stride)
+    s2a = stacked_layer(
+        s1a,
+        nfilters,
+        kernel_size=kernel_size,
+        batch_normalize=batch_normalize,
+        dropout_rate=dropout_rate,
+        alpha=alpha,
+        pool_size=pool_size,
+        pool_stride=pool_stride,
+    )
     nfilters = 32 * filter_factor
-    s3a = stacked_layer(s2a, nfilters, kernel_size=kernel_size,
-                        batch_normalize=batch_normalize, dropout_rate=dropout_rate,
-                        alpha=alpha, pool_size=pool_size, pool_stride=pool_stride)
+    s3a = stacked_layer(
+        s2a,
+        nfilters,
+        kernel_size=kernel_size,
+        batch_normalize=batch_normalize,
+        dropout_rate=dropout_rate,
+        alpha=alpha,
+        pool_size=pool_size,
+        pool_stride=pool_stride,
+    )
     nfilters = 64 * filter_factor
-    s4a = stacked_layer(s3a, nfilters, kernel_size=kernel_size,
-                        batch_normalize=batch_normalize, dropout_rate=dropout_rate,
-                        alpha=alpha, pool_size=pool_size, pool_stride=pool_stride)
+    s4a = stacked_layer(
+        s3a,
+        nfilters,
+        kernel_size=kernel_size,
+        batch_normalize=batch_normalize,
+        dropout_rate=dropout_rate,
+        alpha=alpha,
+        pool_size=pool_size,
+        pool_stride=pool_stride,
+    )
     nfilters = 128 * filter_factor
-    s5a = stacked_layer(s4a, nfilters, kernel_size=kernel_size,
-                        batch_normalize=batch_normalize, dropout_rate=dropout_rate,
-                        alpha=alpha, pool_size=pool_size, pool_stride=pool_stride)
+    s5a = stacked_layer(
+        s4a,
+        nfilters,
+        kernel_size=kernel_size,
+        batch_normalize=batch_normalize,
+        dropout_rate=dropout_rate,
+        alpha=alpha,
+        pool_size=pool_size,
+        pool_stride=pool_stride,
+    )
     nfilters = 256 * filter_factor
-    s6a = stacked_layer(s5a, nfilters, kernel_size=kernel_size,
-                        batch_normalize=batch_normalize, dropout_rate=dropout_rate,
-                        alpha=alpha, pool_size=pool_size, pool_stride=pool_stride)
+    s6a = stacked_layer(
+        s5a,
+        nfilters,
+        kernel_size=kernel_size,
+        batch_normalize=batch_normalize,
+        dropout_rate=dropout_rate,
+        alpha=alpha,
+        pool_size=pool_size,
+        pool_stride=pool_stride,
+    )
 
     # add the same for phase
     nfilters = 8 * filter_factor
-    s1p = stacked_layer(phs_input, nfilters, kernel_size=kernel_size,
-                        batch_normalize=batch_normalize, dropout_rate=dropout_rate,
-                        alpha=alpha, pool_size=pool_size, pool_stride=pool_stride)
+    s1p = stacked_layer(
+        phs_input,
+        nfilters,
+        kernel_size=kernel_size,
+        batch_normalize=batch_normalize,
+        dropout_rate=dropout_rate,
+        alpha=alpha,
+        pool_size=pool_size,
+        pool_stride=pool_stride,
+    )
     nfilters = 16 * filter_factor
-    s2p = stacked_layer(s1p, nfilters, kernel_size=kernel_size,
-                        batch_normalize=batch_normalize, dropout_rate=dropout_rate,
-                        alpha=alpha, pool_size=pool_size, pool_stride=pool_stride)
+    s2p = stacked_layer(
+        s1p,
+        nfilters,
+        kernel_size=kernel_size,
+        batch_normalize=batch_normalize,
+        dropout_rate=dropout_rate,
+        alpha=alpha,
+        pool_size=pool_size,
+        pool_stride=pool_stride,
+    )
     nfilters = 32 * filter_factor
-    s3p = stacked_layer(s2p, nfilters, kernel_size=kernel_size,
-                        batch_normalize=batch_normalize, dropout_rate=dropout_rate,
-                        alpha=alpha, pool_size=pool_size, pool_stride=pool_stride)
+    s3p = stacked_layer(
+        s2p,
+        nfilters,
+        kernel_size=kernel_size,
+        batch_normalize=batch_normalize,
+        dropout_rate=dropout_rate,
+        alpha=alpha,
+        pool_size=pool_size,
+        pool_stride=pool_stride,
+    )
     nfilters = 64 * filter_factor
-    s4p = stacked_layer(s3p, nfilters, kernel_size=kernel_size,
-                        batch_normalize=batch_normalize, dropout_rate=dropout_rate,
-                        alpha=alpha, pool_size=pool_size, pool_stride=pool_stride)
+    s4p = stacked_layer(
+        s3p,
+        nfilters,
+        kernel_size=kernel_size,
+        batch_normalize=batch_normalize,
+        dropout_rate=dropout_rate,
+        alpha=alpha,
+        pool_size=pool_size,
+        pool_stride=pool_stride,
+    )
     nfilters = 128 * filter_factor
-    s5p = stacked_layer(s4p, nfilters, kernel_size=kernel_size,
-                        batch_normalize=batch_normalize, dropout_rate=dropout_rate,
-                        alpha=alpha, pool_size=pool_size, pool_stride=pool_stride)
+    s5p = stacked_layer(
+        s4p,
+        nfilters,
+        kernel_size=kernel_size,
+        batch_normalize=batch_normalize,
+        dropout_rate=dropout_rate,
+        alpha=alpha,
+        pool_size=pool_size,
+        pool_stride=pool_stride,
+    )
     nfilters = 256 * filter_factor
-    s6p = stacked_layer(s5p, nfilters, kernel_size=kernel_size,
-                        batch_normalize=batch_normalize, dropout_rate=dropout_rate,
-                        alpha=alpha, pool_size=pool_size, pool_stride=pool_stride)
+    s6p = stacked_layer(
+        s5p,
+        nfilters,
+        kernel_size=kernel_size,
+        batch_normalize=batch_normalize,
+        dropout_rate=dropout_rate,
+        alpha=alpha,
+        pool_size=pool_size,
+        pool_stride=pool_stride,
+    )
 
     # add layer normalization to stacked layers
     norm_amp = LayerNormalization(trainable=False)(s6a)
@@ -287,7 +373,7 @@ def amp_phs_model(
         conv_stride=conv_stride,
         batch_normalize=batch_normalize,
         dropout_rate=dropout_rate,
-        alpha=alpha
+        alpha=alpha,
     )
     upsample1 = apply_layer_normalization(upsample1, s5a, s5p)
 
@@ -301,7 +387,7 @@ def amp_phs_model(
         conv_stride=conv_stride,
         batch_normalize=batch_normalize,
         dropout_rate=dropout_rate,
-        alpha=alpha
+        alpha=alpha,
     )
     upsample2 = apply_layer_normalization(upsample2, s3a, s3p)
 
@@ -315,7 +401,7 @@ def amp_phs_model(
         conv_stride=conv_stride,
         batch_normalize=False,
         dropout_rate=0.0,
-        alpha=alpha
+        alpha=alpha,
     )
     upsample3 = apply_layer_normalization(upsample3, s1a, s1p)
 
@@ -329,7 +415,7 @@ def amp_phs_model(
         conv_stride=conv_stride,
         batch_normalize=False,
         dropout_rate=0.0,
-        alpha=alpha
+        alpha=alpha,
     )
     upsample4 = apply_layer_normalization(upsample4, amp_input, phs_input)
     upsample4 = Conv2D(2, kernel_size=1, padding="same")(upsample4)
@@ -346,10 +432,12 @@ def amp_phs_model(
     output_shape = output.shape[1:3]
     input_shape = input_shape[:2]
     if output_shape != input_shape:
-        raise ValueError("The output shape is different from the input shape; "
-                         "output has shape {} and input has shape {}. Please "
-                         "check the size and stride of max pooling layers and "
-                         "try again.".format(str(output_shape), str(input_shape)))
+        raise ValueError(
+            "The output shape is different from the input shape; "
+            "output has shape {} and input has shape {}. Please "
+            "check the size and stride of max pooling layers and "
+            "try again.".format(str(output_shape), str(input_shape))
+        )
 
     # Define the model
     model = Model(inputs=[amp_input, phs_input], outputs=[output])
