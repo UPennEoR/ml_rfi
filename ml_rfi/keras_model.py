@@ -2,11 +2,11 @@
 # Copyright 2019 The HERA Collaboration
 # Licensed under the 2-clause BSD License
 
+import numpy as np
 from keras.models import Model
 from keras.layers import Activation, BatchNormalization, concatenate, Conv2D
 from keras.layers import Conv2DTranspose, Dropout, Input, LeakyReLU
 from keras.layers import MaxPooling2D, Reshape
-from keras_layer_normalization import LayerNormalization
 
 
 def stacked_layer(
@@ -57,13 +57,22 @@ def stacked_layer(
         The output Keras layer following the stacked layer.
     """
     layer = Conv2D(nfilters, kernel_size=kernel_size, padding="same")(input_layer)
-    layer = LeakyReLU(alpha=alpha)(layer)
+    if alpha > 0.0:
+        layer = LeakyReLU(alpha=alpha)(layer)
+    else:
+        layer = Activation("relu")(layer)
     layer = Conv2D(nfilters, kernel_size=kernel_size, padding="same")(layer)
-    layer = LeakyReLU(alpha=alpha)(layer)
+    if alpha > 0.0:
+        layer = LeakyReLU(alpha=alpha)(layer)
+    else:
+        layer = Activation("relu")(layer)
     if dropout_rate > 0.0:
         layer = Dropout(dropout_rate)(layer)
     layer = Conv2D(nfilters, kernel_size=kernel_size, padding="same")(layer)
-    layer = LeakyReLU(alpha=alpha)(layer)
+    if alpha > 0.0:
+        layer = LeakyReLU(alpha=alpha)(layer)
+    else:
+        layer = Activation("relu")(layer)
     if batch_normalize:
         layer = BatchNormalization()(layer)
     layer = MaxPooling2D(pool_size=pool_size, strides=pool_stride)(layer)
@@ -118,7 +127,10 @@ def upsample_layer(
     layer = Conv2DTranspose(
         nfilters, kernel_size=kernel_size, strides=conv_stride, padding="same"
     )(input_layer)
-    layer = LeakyReLU(alpha=alpha)(layer)
+    if alpha > 0.0:
+        layer = LeakyReLU(alpha=alpha)(layer)
+    else:
+        layer = Activation("relu")(layer)
     if batch_normalize:
         layer = BatchNormalization()(layer)
     if dropout_rate > 0.0:
@@ -126,8 +138,8 @@ def upsample_layer(
     return layer
 
 
-def apply_layer_normalization(layer1, layer2, layer3, dropout_rate=0.7):
-    """Apply a non-trainable layer normalization to the network and concatenate.
+def normalize_and_concatenate(layer1, layer2, layer3, dropout_rate=0.7):
+    """Normalize layers and concatenate.
 
     Parameters
     ----------
@@ -146,9 +158,9 @@ def apply_layer_normalization(layer1, layer2, layer3, dropout_rate=0.7):
     Keras layer
         A Keras layer with all of the input layers concatenated together.
     """
-    layer1 = LayerNormalization(trainable=False)(layer1)
-    layer2 = LayerNormalization(trainable=False)(layer2)
-    layer3 = LayerNormalization(trainable=False)(layer3)
+    layer1 = BatchNormalization(trainable=False)(layer1)
+    layer2 = BatchNormalization(trainable=False)(layer2)
+    layer3 = BatchNormalization(trainable=False)(layer3)
     if dropout_rate > 0.0:
         layer1 = Dropout(dropout_rate)(layer1)
         layer2 = Dropout(dropout_rate)(layer2)
@@ -202,7 +214,7 @@ def amp_phs_model(
         size of the input dataset is determined by the size and stride of the
         max pooling layers.
     pool_stride : tuple of ints
-        THe stride of pool to use in max pooling layers. Note that the minimum
+        The stride of pool to use in max pooling layers. Note that the minimum
         size of the input dataset is determined by the size and stride of the
         max pooling layers.
 
@@ -351,9 +363,9 @@ def amp_phs_model(
         pool_stride=pool_stride,
     )
 
-    # add layer normalization to stacked layers
-    norm_amp = LayerNormalization(trainable=False)(s6a)
-    norm_phs = LayerNormalization(trainable=False)(s6p)
+    # add batch normalization to stacked layers
+    norm_amp = BatchNormalization(trainable=False)(s6a)
+    norm_phs = BatchNormalization(trainable=False)(s6p)
 
     if dropout_rate > 0.0:
         # add dropout layers after the final stacked layers
@@ -364,8 +376,14 @@ def amp_phs_model(
     norm_tot = concatenate([norm_amp, norm_phs])
 
     # start upsampling to get back to the original size
+    in_shape = norm_tot.shape
     nfilters = 128 * filter_factor
-    conv_stride = (2, 2)
+    target_shape = s5a.shape
+    cx = int(np.ceil(int(target_shape[1]) / int(in_shape[1])))
+    cy = int(np.ceil(int(target_shape[2]) / int(in_shape[2])))
+    conv_stride = (cx, cy)
+    target_size = int(target_shape[1]) * int(target_shape[2]) * int(target_shape[3]) / 2
+    input_size = cx * int(in_shape[1]) * cy * int(in_shape[2])
     upsample1 = upsample_layer(
         norm_tot,
         nfilters,
@@ -375,11 +393,16 @@ def amp_phs_model(
         dropout_rate=dropout_rate,
         alpha=alpha,
     )
-    upsample1 = apply_layer_normalization(upsample1, s5a, s5p)
+    target_shape = (int(target_shape[1]), int(target_shape[2]), int(target_shape[3]))
+    upsample1 = normalize_and_concatenate(upsample1, s5a, s5p)
 
     # upsample again
     nfilters = 32 * filter_factor
-    conv_stride = (4, 4)
+    in_shape = upsample1.shape
+    target_shape = s3a.shape
+    cx = int(np.ceil(int(target_shape[1]) / int(in_shape[1])))
+    cy = int(np.ceil(int(target_shape[2]) / int(in_shape[2])))
+    conv_stride = (cx, cy)
     upsample2 = upsample_layer(
         upsample1,
         nfilters,
@@ -389,11 +412,15 @@ def amp_phs_model(
         dropout_rate=dropout_rate,
         alpha=alpha,
     )
-    upsample2 = apply_layer_normalization(upsample2, s3a, s3p)
+    upsample2 = normalize_and_concatenate(upsample2, s3a, s3p)
 
-    # upsample again last time
+    # upsample again
     nfilters = 8 * filter_factor
-    conv_stride = (4, 4)
+    in_shape = upsample2.shape
+    target_shape = s1a.shape
+    cx = int(np.ceil(int(target_shape[1]) / int(in_shape[1])))
+    cy = int(np.ceil(int(target_shape[2]) / int(in_shape[2])))
+    conv_stride = (cx, cy)
     upsample3 = upsample_layer(
         upsample2,
         nfilters,
@@ -403,10 +430,10 @@ def amp_phs_model(
         dropout_rate=0.0,
         alpha=alpha,
     )
-    upsample3 = apply_layer_normalization(upsample3, s1a, s1p)
+    upsample3 = normalize_and_concatenate(upsample3, s1a, s1p)
 
-    # make final output layer
-    nfilters = 1  # just a single layer of flags
+    # final upsample to meet input layers
+    nfilters = 1
     conv_stride = (2, 2)
     upsample4 = upsample_layer(
         upsample3,
@@ -417,9 +444,15 @@ def amp_phs_model(
         dropout_rate=0.0,
         alpha=alpha,
     )
-    upsample4 = apply_layer_normalization(upsample4, amp_input, phs_input)
+    upsample4 = normalize_and_concatenate(upsample4, amp_input, phs_input)
+
+    # make output layer
+    # we have two classes, to we need 2 Conv2D filters
     upsample4 = Conv2D(2, kernel_size=1, padding="same")(upsample4)
-    upsample4 = LeakyReLU(alpha=alpha)(upsample4)
+    if alpha > 0.0:
+        upsample4 = LeakyReLU(alpha=alpha)(upsample4)
+    else:
+        upsample4 = Activation("relu")(upsample4)
 
     # reshape to the right size
     out_dims = (input_shape[0], input_shape[1], 2)

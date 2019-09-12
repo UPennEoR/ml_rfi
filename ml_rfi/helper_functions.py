@@ -16,7 +16,6 @@ import tensorflow as tf
 import keras
 from keras import backend as K
 from keras.models import load_model
-from keras_layer_normalization import LayerNormalization
 
 from . import keras_model
 
@@ -967,6 +966,12 @@ def keras_convert_wf(wf, Nt_min=64, Nf_min=64):
     wf_amp[:, :, :, 0] = np.log10(np.abs(wf))
     wf_phs[:, :, :, 0] = np.angle(wf)
 
+    # clean up potential NaNs
+    minval = np.amin(wf_amp)
+    wf_amp = np.where(np.isnan(wf_amp), minval, wf_amp)
+    if np.any(np.isnan(wf_amp)):
+        raise AssertionError("NaN values present in input waterfall")
+
     # maybe pad times
     if input_shape[1] < Nt_min:
         # pad it out
@@ -1034,6 +1039,36 @@ def keras_convert_flags(flags, Nt_min=64, Nf_min=64):
             flags_out, ((0, 0), (0, 0), (Npad, Npad), (0, 0)), mode="reflect"
         )
 
+    return flags_out
+
+
+def keras_unpad_flags(flags, Nt_out=60, Nf_out=1024):
+    """Extract predicted flags from Keras model.
+
+    Parameters
+    ----------
+    flags : ndarray
+        The predicted flags from the Keras model.
+    Nt_out : int
+        The target number of times to extract in the first (time) dimension.
+    Nf_out : int
+        The target number of frequencies to extract in the second (frequency)
+        dimension.
+
+    Returns
+    -------
+    flags_out : ndarray
+        The flags array reduced to size (Nt_out, Nf_out).
+    """
+    flags_shape = flags.shape
+    if len(flags_shape) != 4:
+        raise ValueError("flags must be a 4-dimensional array")
+    Npad_t = flags_shape[1] - Nt_out
+    t_start = Npad_t // 2
+    Npad_f = flags_shape[2] - Nf_out
+    f_start = Npad_f // 2
+    flags_out = flags[:, t_start : t_start + Nt_out, f_start : f_start + Nf_out, :]
+    flags_out = np.argmax(flags_out, axis=-1)
     return flags_out
 
 
@@ -1121,19 +1156,25 @@ class KerasFitter(object):
 
         return
 
-    def load_data(self, data_fn, n_train, n_test):
+    def load_data(self, data_fn, n_train, n_test, Nt_min=64, Nf_min=64):
         """Load the data and make sure it's the right size.
 
         Parameters
         ----------
         data_fn : str
             The full path to the data to use for training and testing.
-
         n_train : int
             The number of samples to use as training data.
-
         n_test : int
             The number of samples to use as testing/evaluation data.
+        Nt_min : int
+            The minimum number of elements in the time (first) dimension of
+            the waterfall required by the network. This argument will be passed
+            to the keras_convert_wf function and keras_convert_flags function.
+        Nf_min : int
+            The minimum number of elements in the frequency (second) dimension of
+            the waterfall required by the network. This argument will be passed
+            to the keras_convert_wf function and keras_convert_flags function.
 
         Returns
         -------
@@ -1153,6 +1194,8 @@ class KerasFitter(object):
         self.data_fn = data_fn
         self.n_train = n_train
         self.n_test = n_test
+        self.Nt_min = Nt_min
+        self.Nf_min = Nf_min
 
         print("Reading data from {}...".format(self.data_fn))
         with h5py.File(self.data_fn, "r") as f:
@@ -1163,10 +1206,14 @@ class KerasFitter(object):
 
         # resize data as necessary
         print("Formatting data...")
-        self.train_data_amp, self.train_data_phs = keras_convert_wf(train_data)
-        self.train_flag = keras_convert_flags(train_flag)
-        self.test_data_amp, self.test_data_phs = keras_convert_wf(test_data)
-        self.test_flag = keras_convert_flags(test_flag)
+        self.train_data_amp, self.train_data_phs = keras_convert_wf(
+            train_data, Nt_min=Nt_min, Nf_min=Nf_min,
+        )
+        self.train_flag = keras_convert_flags(train_flag, Nt_min=Nt_min, Nf_min=Nf_min)
+        self.test_data_amp, self.test_data_phs = keras_convert_wf(
+            test_data, Nt_min=Nt_min, Nf_min=Nf_min
+        )
+        self.test_flag = keras_convert_flags(test_flag, Nt_min=Nt_min, Nf_min=Nf_min)
 
         # make sure things are the right size/shape
         assert self.train_data_amp.shape == self.train_data_phs.shape
@@ -1343,7 +1390,6 @@ class KerasFitter(object):
         self.model = load_model(
             model_fn,
             custom_objects={
-                "LayerNormalization": LayerNormalization(),
                 "keras_recall_metric": keras_recall_metric,
                 "keras_precision_metric": keras_precision_metric,
                 "keras_f2_metric": keras_f2_metric,
@@ -1372,7 +1418,16 @@ class KerasFitter(object):
             raise ValueError(
                 "A model must be trained or loaded before prediction can be done."
             )
+        if not hasattr(self, "Nt_min"):
+            # assume some defaults
+            self.Nt_min = 64
+            self.Nf_min = 64
         input_shape = input_data.shape
-        input_data_amp, input_data_phs = keras_convert_wf(input_data)
+        input_data_amp, input_data_phs = keras_convert_wf(
+            input_data, Nt_min=self.Nt_min, Nf_min=self.Nf_min
+        )
+        if np.any(np.isinf(input_data)):
+            raise AssertionError("input data has NaN values")
         predicted_flags = self.model.predict([input_data_amp, input_data_phs])
-        return predicted_flags.astype(np.bool).reshape(input_shape)
+        unpadded_flags = keras_unpad_flags(predicted_flags, input_shape[1], input_shape[2])
+        return unpadded_flags.astype(np.bool).reshape(input_shape)
