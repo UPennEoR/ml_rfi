@@ -16,6 +16,7 @@ import tensorflow as tf
 import keras
 from keras import backend as K
 from keras.models import load_model
+from keras.utils import to_categorical
 
 from . import keras_model
 
@@ -1039,6 +1040,9 @@ def keras_convert_flags(flags, Nt_min=64, Nf_min=64):
             flags_out, ((0, 0), (0, 0), (Npad, Npad), (0, 0)), mode="reflect"
         )
 
+    # convert to "full size" array using to_categorical for one-hot encoding
+    flags_out = to_categorical(flags_out)
+
     return flags_out
 
 
@@ -1216,10 +1220,12 @@ class KerasFitter(object):
         self.test_flag = keras_convert_flags(test_flag, Nt_min=Nt_min, Nf_min=Nf_min)
 
         # make sure things are the right size/shape
+        # data and flags have a different number for the final axis because of
+        # the to_categorical conversion
         assert self.train_data_amp.shape == self.train_data_phs.shape
-        assert self.train_data_amp.shape == self.train_flag.shape
+        assert self.train_data_amp.shape[:-1] == self.train_flag.shape[:-1]
         assert self.test_data_amp.shape == self.test_data_phs.shape
-        assert self.test_data_amp.shape == self.test_flag.shape
+        assert self.test_data_amp.shape[:-1] == self.test_flag.shape[:-1]
 
         return
 
@@ -1231,8 +1237,8 @@ class KerasFitter(object):
         pool_size=(2, 2),
         pool_stride=(2, 2),
         optimizer="adam",
-        loss="sparse_categorical_crossentropy",
-        metrics=["sparse_categorical_accuracy"],
+        loss="categorical_crossentropy",
+        metrics=["accuracy"],
         tb_callback=True,
         epochs=200,
         batch_size=32,
@@ -1430,4 +1436,4 @@ class KerasFitter(object):
             raise AssertionError("input data has NaN values")
         predicted_flags = self.model.predict([input_data_amp, input_data_phs])
         unpadded_flags = keras_unpad_flags(predicted_flags, input_shape[1], input_shape[2])
-        return unpadded_flags.astype(np.bool).reshape(input_shape)
+        return unpadded_flags.astype(np.bool)

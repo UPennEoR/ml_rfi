@@ -53,31 +53,38 @@ def stacked_layer(
 
     Returns
     -------
-    layer : Keras layer
+    out_layer : Keras layer
         The output Keras layer following the stacked layer.
     """
     layer = Conv2D(nfilters, kernel_size=kernel_size, padding="same")(input_layer)
     if alpha > 0.0:
-        layer = LeakyReLU(alpha=alpha)(layer)
+        layer1 = LeakyReLU(alpha=alpha)(layer)
     else:
-        layer = Activation("relu")(layer)
-    layer = Conv2D(nfilters, kernel_size=kernel_size, padding="same")(layer)
+        layer1 = Activation("relu")(layer)
+    layer2 = Conv2D(nfilters, kernel_size=kernel_size, padding="same")(layer1)
     if alpha > 0.0:
-        layer = LeakyReLU(alpha=alpha)(layer)
+        layer3 = LeakyReLU(alpha=alpha)(layer2)
     else:
-        layer = Activation("relu")(layer)
+        layer3 = Activation("relu")(layer2)
     if dropout_rate > 0.0:
-        layer = Dropout(dropout_rate)(layer)
-    layer = Conv2D(nfilters, kernel_size=kernel_size, padding="same")(layer)
-    if alpha > 0.0:
-        layer = LeakyReLU(alpha=alpha)(layer)
+        layer4 = Dropout(dropout_rate)(layer3)
     else:
-        layer = Activation("relu")(layer)
+        layer4 = layer3
+    layer5 = Conv2D(nfilters, kernel_size=1, padding="same")(layer4)
+    if alpha > 0.0:
+        layer6 = LeakyReLU(alpha=alpha)(layer5)
+    else:
+        layer6 = Activation("relu")(layer5)
     if batch_normalize:
-        layer = BatchNormalization()(layer)
-    layer = MaxPooling2D(pool_size=pool_size, strides=pool_stride)(layer)
+        layer7 = BatchNormalization()(layer6)
+    else:
+        layer7 = layer6
+    out_layer = MaxPooling2D(pool_size=pool_size, strides=pool_stride)(layer7)
 
-    return layer
+    # cleanup
+    del layer, layer1, layer2, layer3, layer4, layer5, layer6, layer7
+
+    return out_layer
 
 
 def upsample_layer(
@@ -124,18 +131,26 @@ def upsample_layer(
     layer : Keras layer
         The output layer following the upsampling.
     """
-    layer = Conv2DTranspose(
+    layer1 = Conv2DTranspose(
         nfilters, kernel_size=kernel_size, strides=conv_stride, padding="same"
     )(input_layer)
     if alpha > 0.0:
-        layer = LeakyReLU(alpha=alpha)(layer)
+        layer2 = LeakyReLU(alpha=alpha)(layer1)
     else:
-        layer = Activation("relu")(layer)
+        layer2 = Activation("relu")(layer1)
     if batch_normalize:
-        layer = BatchNormalization()(layer)
+        layer3 = BatchNormalization()(layer2)
+    else:
+        layer3 = layer2
     if dropout_rate > 0.0:
-        layer = Dropout(dropout_rate)(layer)
-    return layer
+        out_layer = Dropout(dropout_rate)(layer3)
+    else:
+        out_layer = layer3
+
+    # cleanup
+    del layer1, layer2, layer3
+
+    return out_layer
 
 
 def normalize_and_concatenate(layer1, layer2, layer3, dropout_rate=0.7):
