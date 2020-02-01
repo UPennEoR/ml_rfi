@@ -3,10 +3,10 @@
 # Licensed under the 2-clause BSD License
 
 import numpy as np
-from keras.models import Model
-from keras.layers import Activation, BatchNormalization, concatenate, Conv2D
-from keras.layers import Conv2DTranspose, Dropout, Input, LeakyReLU
-from keras.layers import MaxPooling2D, Reshape
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Activation, BatchNormalization, concatenate, Conv2D
+from tensorflow.keras.layers import Conv2DTranspose, Dropout, Input, LeakyReLU
+from tensorflow.keras.layers import MaxPooling2D, Reshape
 
 
 def stacked_layer(

@@ -13,10 +13,10 @@ import h5py
 from sklearn.metrics import confusion_matrix
 from scipy import ndimage
 import tensorflow as tf
-import keras
-from keras import backend as K
-from keras.models import load_model
-from keras.utils import to_categorical
+import tensorflow.keras as keras
+from tensorflow.keras import backend as K
+from tensorflow.keras.models import load_model
+from tensorflow.keras.utils import to_categorical
 
 from . import keras_model
 
