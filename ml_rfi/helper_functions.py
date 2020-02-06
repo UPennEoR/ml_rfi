@@ -1323,7 +1323,8 @@ class KerasFitter(object):
             callbacks = [tb]
         else:
             callbacks = []
-
+        es = keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
+        callbacks.append(es)
         # fit model
         model.fit(
             [self.train_data_amp, self.train_data_phs],
