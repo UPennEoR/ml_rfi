@@ -1241,6 +1241,7 @@ class KerasFitter(object):
         metrics=["accuracy"],
         tb_callback=True,
         epochs=200,
+        patience=10,
         batch_size=32,
         verbose=False,
     ):
@@ -1279,6 +1280,8 @@ class KerasFitter(object):
             working directory.
         epochs : int
             The number of epochs to train the model for.
+        patience : int
+            The number of patience of epochs when calling an early stopping.
         batch_size : int
             The batch size to use during training.
         verbose : bool
@@ -1323,7 +1326,7 @@ class KerasFitter(object):
             callbacks = [tb]
         else:
             callbacks = []
-        es = keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
+        es = keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=patience)
         callbacks.append(es)
         # fit model
         model.fit(
